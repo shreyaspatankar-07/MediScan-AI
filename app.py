@@ -599,34 +599,44 @@ with tab4:
             st.rerun()
 
     st.markdown("---")
-    st.markdown("### 📷 Posture Biomechanics Analysis (Gemini Vision)")
+    st.markdown("### 🎥 Posture Biomechanics Analysis (Gemini Video)")
     
-    # Requirement 3: File uploader (accepting jpg, png)
-    uploaded_image = st.file_uploader(
-        "Upload Exercise Image (Push-up/Squat/etc.)",
-        type=["jpg", "png"],
-        help="Upload a photo of you performing an exercise to analyze posture and form."
+    # Requirement 1: Update Uploader to accept video formats
+    uploaded_video = st.file_uploader(
+        "Upload Exercise Video (Push-up/Squat)",
+        type=["mp4", "mov", "avi"],
+        help="Upload a video of you performing an exercise to analyze posture and form."
     )
 
-    if uploaded_image is not None:
-        st.image(uploaded_image, caption="Uploaded Exercise Photo", use_container_width=True)
+    if uploaded_video is not None:
+        st.info("📹 Video file loaded. Click the button below to upload and analyze.")
 
         if st.button("🔍 Analyze Posture Biomechanics", key="analyze_posture_vision", type="primary", use_container_width=True):
             try:
-                # Use PIL.Image.open to read the image into memory
-                pil_image = Image.open(uploaded_image)
+                # Requirement 3: Video Processing Logic (save bytes to a temporary file)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+                    temp_video.write(uploaded_video.read())
+                    temp_video_path = temp_video.name
 
-                prompt = "You are an expert biomechanics coach. Analyze this image of a user performing an exercise. Identify the exercise, evaluate their posture (e.g., back alignment, joint angles), and provide 3 specific corrections to improve their form and prevent injury."
+                # Requirement 4: Upload and Analyze with Gemini
+                with st.spinner("Uploading and analyzing video biomechanics via Gemini..."):
+                    uploaded_video_gemini = client.files.upload(file=temp_video_path)
 
-                # Wrap the execution in st.spinner
-                with st.spinner("Analyzing biomechanics via Gemini Vision..."):
                     response = client.models.generate_content(
                         model="gemini-2.0-flash",
-                        contents=[prompt, pil_image],
+                        contents=["You are an expert biomechanics coach. Watch this video of a user performing an exercise. Identify the exercise, evaluate their posture frame-by-frame (e.g., back alignment, depth, joint angles), and provide 3 specific corrections to improve their form.", uploaded_video_gemini]
                     )
                     st.session_state.kinetic_vision_result = response.text
+
+                # Clean up the temp file
+                os.remove(temp_video_path)
             except Exception as exc:
-                st.session_state.kinetic_vision_result = f"⚠️ **Gemini Vision error:** `{exc}`"
+                st.session_state.kinetic_vision_result = f"⚠️ **Gemini Video error:** `{exc}`"
+                if 'temp_video_path' in locals() and os.path.exists(temp_video_path):
+                    try:
+                        os.remove(temp_video_path)
+                    except Exception:
+                        pass
 
     if st.session_state.kinetic_vision_result:
         st.markdown("---")
@@ -635,6 +645,7 @@ with tab4:
         if st.button("🗑️ Clear Analysis", key="clear_kinetic_vision"):
             st.session_state.kinetic_vision_result = None
             st.rerun()
+
 
 
 
