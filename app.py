@@ -85,6 +85,10 @@ if "coach_recommendation" not in st.session_state:
 if "health_metrics" not in st.session_state:
     st.session_state.health_metrics = pd.DataFrame()
 
+if "camera_active" not in st.session_state:
+    st.session_state.camera_active = False
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 👤 Patient Profile")
@@ -277,8 +281,16 @@ with tab2:
     )
 
     # ── Req 2: Camera input (primary) + file uploader (fallback) ──────────────────
-    camera_image = st.camera_input("Capture Symptom or Medical Report", facing_mode="environment")
-
+    if st.session_state.camera_active:
+        camera_image = st.camera_input("Capture Symptom or Medical Report", facing_mode="environment")
+        if st.button("🔌 Turn Off Camera", key="deactivate_camera", use_container_width=True):
+            st.session_state.camera_active = False
+            st.rerun()
+    else:
+        camera_image = None
+        if st.button("📷 Open Camera to Capture Scan", key="activate_camera", use_container_width=True):
+            st.session_state.camera_active = True
+            st.rerun()
 
     st.markdown("**Or upload an existing image:**")
     uploaded_file = st.file_uploader(
