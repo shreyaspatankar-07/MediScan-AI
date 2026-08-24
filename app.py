@@ -227,6 +227,30 @@ with st.sidebar:
         if profile.get("chronic_conditions"):
             st.markdown(f"- **Conditions:** {profile['chronic_conditions']}")
 
+    st.markdown("---")
+    st.markdown("### 📄 Export Dossier")
+
+    def generate_dossier():
+        content = f"=== MEDISCAN AI PATIENT DOSSIER ===\n\n"
+        content += f"PROFILE:\nAge: {profile.get('age')}\nSex: {profile.get('sex')}\nWeight: {profile.get('weight')} kg\nConditions: {profile.get('chronic_conditions')}\n\n"
+        
+        if not st.session_state.health_metrics.empty:
+            content += f"BIOMETRIC TRAJECTORY (Last 6 Months):\n{st.session_state.health_metrics.to_string(index=False)}\n\n"
+            
+        if st.session_state.report_result:
+            content += f"LATEST LAB REPORT ANALYSIS:\n{st.session_state.report_result}\n\n"
+            
+        return content
+
+    st.download_button(
+        label="📥 Download Clinical Dossier",
+        data=generate_dossier(),
+        file_name="mediscan_dossier.txt",
+        mime="text/plain",
+        use_container_width=True,
+        type="secondary"
+    )
+
 # ── Main Content ──────────────────────────────────────────────────────────────
 st.markdown("# 🩺 MediScan AI")
 st.markdown("*Your intelligent medical assistant powered by Google Gemini*")
