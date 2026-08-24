@@ -88,10 +88,21 @@ if "health_metrics" not in st.session_state:
 if "camera_active" not in st.session_state:
     st.session_state.camera_active = False
 
+if "app_language" not in st.session_state:
+    st.session_state.app_language = "English"
+
+
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
+    st.markdown("### 🌐 Language Preferences")
+    st.session_state.app_language = st.selectbox(
+        "Select Response Language",
+        ["English", "Hindi (हिन्दी)", "Marathi (मराठी)", "Bengali (বাংলা)", "Spanish (Español)"]
+    )
+
     st.markdown("## 👤 Patient Profile")
+
 
     if not _api_ready:
         st.warning(
@@ -217,6 +228,9 @@ PATIENT BIOMETRIC BASELINE:
 - Sex: {profile.get('sex', 'Not provided')}
 - Weight: {profile.get('weight', 'Not provided')} kg
 - Chronic Conditions: {profile.get('chronic_conditions') or 'None reported'}
+
+CRITICAL LANGUAGE INSTRUCTION:
+You must translate your entire response, including the differential diagnosis and recommended steps, into {st.session_state.app_language}. Ensure medical terms are accurately translated or transliterated. The CDSCO disclaimer must also be translated into {st.session_state.app_language}.
 """
 
         display_text = user_text if user_text else "🎙️ *Voice message recorded*"
@@ -246,7 +260,7 @@ PATIENT BIOMETRIC BASELINE:
             with st.spinner("🧠 Analysing symptoms…"):
                 try:
                     response = client.models.generate_content(
-                        model="gemini-3.6-flash",
+                        model="gemini-2.0-flash",
                         contents=contents_payload,
                         config=types.GenerateContentConfig(
                             system_instruction=dynamic_system_instruction,
@@ -319,15 +333,16 @@ with tab2:
             pil_image = Image.open(image_source)
 
             # Req 3: Spinner wraps all processing
-            with st.spinner("Analyzing medical visual data..."):
+            with st.spinner(f"Analyzing medical visual data in {st.session_state.app_language}..."):
                 try:
+                    lang_vision_instruction = VISION_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your entire analysis and the CDSCO disclaimer in {st.session_state.app_language}."
                     # Req 5: Pass text string + Pillow image object directly;
                     #         apply VISION_SYSTEM_INSTRUCTION via GenerateContentConfig
                     response = client.models.generate_content(
-                        model="gemini-3.6-flash",
+                        model="gemini-2.0-flash",
                         contents=["Please analyze this medical image.", pil_image],
                         config=types.GenerateContentConfig(
-                            system_instruction=VISION_SYSTEM_INSTRUCTION,
+                            system_instruction=lang_vision_instruction,
                         ),
                     )
                     st.session_state.report_result = response.text
@@ -467,13 +482,14 @@ with tab3:
             "3-bullet-point wellness recommendations."
         )
 
-        with st.spinner("🧠 Health Coach is analysing your biometric trends…"):
+        with st.spinner(f"🧠 Health Coach is analysing your biometric trends in {st.session_state.app_language}..."):
             try:
+                lang_coach_instruction = HEALTH_COACH_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your 3-bullet-point wellness recommendation and the CDSCO disclaimer entirely in {st.session_state.app_language}."
                 response = client.models.generate_content(
-                    model="gemini-3.6-flash",
+                    model="gemini-2.0-flash",
                     contents=[coach_prompt],
                     config=types.GenerateContentConfig(
-                        system_instruction=HEALTH_COACH_SYSTEM_INSTRUCTION,
+                        system_instruction=lang_coach_instruction,
                     ),
                 )
                 st.session_state.coach_recommendation = response.text
