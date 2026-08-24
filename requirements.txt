@@ -7,3 +7,4 @@ requests==2.31.0
 gTTS==2.5.1
 seaborn
 matplotlib
+reportlab

@@ -13,6 +13,13 @@ import time
 import seaborn as sns
 import matplotlib.pyplot as plt
 from datetime import datetime, date
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak,
+)
 
 # ── Page Configuration ───────────────────────────────────────────────────────
 st.set_page_config(
@@ -103,6 +110,7 @@ def new_patient_record(age=25, sex="Male", weight=70.0, conditions=""):
         "health_metrics": blank_health_metrics(),
         "coach_recommendation": None,
         "feedback": {},
+        "last_intake": None,
     }
 
 
@@ -131,6 +139,153 @@ def metric_flag(name, value):
     if value <= high * 1.2:
         return "🟠 Elevated", "orange"
     return "🔴 High", "red"
+
+
+def generate_doctor_pdf(patient_name, record, emergency_contact, language,
+                         include_chat=True, include_reports=True, include_biometrics=True,
+                         doctor_name="", referring_note=""):
+    """Builds an in-memory PDF clinical handoff summary for a doctor. Returns BytesIO."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        topMargin=0.6 * inch, bottomMargin=0.6 * inch,
+        leftMargin=0.6 * inch, rightMargin=0.6 * inch,
+    )
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=18, spaceAfter=4)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=13, spaceBefore=14, spaceAfter=6, textColor=colors.HexColor("#1a4d7a"))
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, textColor=colors.gray)
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
+    tag = ParagraphStyle("tag", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#b02a2a"))
+
+    def esc(text):
+        return (str(text) or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    story = []
+
+    story.append(Paragraph("🩺 MediScan AI — Clinical Handoff Summary", h1))
+    story.append(Paragraph(
+        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} · Response language on record: {language}",
+        small,
+    ))
+    story.append(HRFlowable(width="100%", color=colors.HexColor("#1a4d7a"), thickness=1, spaceAfter=8))
+
+    if doctor_name or referring_note:
+        story.append(Paragraph(f"<b>Addressed to:</b> {esc(doctor_name) or 'Attending Physician'}", body))
+        if referring_note:
+            story.append(Paragraph(f"<b>Note from patient/carer:</b> {esc(referring_note)}", body))
+        story.append(Spacer(1, 6))
+
+    # ── Patient Profile ────────────────────────────────────────────────────
+    story.append(Paragraph("Patient Profile", h2))
+    prof = record["profile"]
+    profile_table_data = [
+        ["Name", esc(patient_name)],
+        ["Age", esc(prof.get("age", "—"))],
+        ["Sex", esc(prof.get("sex", "—"))],
+        ["Weight", f"{prof.get('weight_kg', 0):.1f} kg" if prof.get("weight_kg") else "—"],
+        ["Chronic Conditions", esc(prof.get("chronic_conditions") or "None reported")],
+    ]
+    if emergency_contact.get("name"):
+        profile_table_data.append(["Emergency Contact", f"{esc(emergency_contact['name'])} — {esc(emergency_contact.get('phone', ''))}"])
+    pt = Table(profile_table_data, colWidths=[1.7 * inch, 4.3 * inch])
+    pt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f8")),
+        ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9d6e3")),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(pt)
+
+    # ── Structured Intake (most recent) ────────────────────────────────────
+    intake = record.get("last_intake")
+    if intake:
+        story.append(Paragraph("Most Recent Structured Intake", h2))
+        intake_data = [
+            ["Severity", f"{intake.get('severity', '—')}/10"],
+            ["Duration", esc(intake.get("duration", "—"))],
+            ["Onset", esc(intake.get("onset", "—"))],
+            ["Affected Area(s)", esc(", ".join(intake.get("body_areas", [])) or "Not specified")],
+        ]
+        it = Table(intake_data, colWidths=[1.7 * inch, 4.3 * inch])
+        it.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f8")),
+            ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9d6e3")),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(it)
+
+    # ── Biometric Trend ─────────────────────────────────────────────────────
+    if include_biometrics and not record["health_metrics"].empty:
+        story.append(Paragraph("6-Month Biometric Trend", h2))
+        hm = record["health_metrics"]
+        header = ["Month", "Resting HR", "Systolic BP", "Fasting Glucose", "Risk Score"]
+        rows = [header] + hm[["Month", "Resting_HR", "Systolic_BP", "Fasting_Glucose", "Health_Risk_Score"]].astype(str).values.tolist()
+        bt = Table(rows, colWidths=[1.0 * inch] * 5)
+        bt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a4d7a")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9d6e3")),
+            ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f5f8fb")]),
+        ]))
+        story.append(bt)
+        latest = hm.iloc[-1]
+        flag_label, _ = metric_flag("Health_Risk_Score", latest["Health_Risk_Score"])
+        story.append(Paragraph(f"Latest Health Risk Score: <b>{int(latest['Health_Risk_Score'])}/100</b> ({esc(flag_label)})", body))
+
+    # ── AI Triage Transcript ────────────────────────────────────────────────
+    if include_chat and record["chat_history"]:
+        story.append(Paragraph("AI Triage Session Transcript", h2))
+        story.append(Paragraph(
+            "The following is an automated triage conversation between the patient and MediScan AI. "
+            "This is provided for context only and does not constitute a clinical diagnosis.", tag,
+        ))
+        story.append(Spacer(1, 4))
+        for m in record["chat_history"]:
+            role_label = "Patient" if m["role"] == "user" else "MediScan AI"
+            style = body
+            text = esc(m["content"]).replace("\n", "<br/>")
+            story.append(Paragraph(f"<b>{role_label}:</b> {text}", style))
+            story.append(Spacer(1, 6))
+
+    # ── Report / Lab Analysis History ──────────────────────────────────────
+    if include_reports and record["report_history"]:
+        story.append(PageBreak())
+        story.append(Paragraph("Lab / Visual Report Analyses", h2))
+        for r in record["report_history"]:
+            story.append(Paragraph(f"<b>{esc(r['filename'])}</b> — {esc(r['timestamp'])}", body))
+            text = esc(r["result"]).replace("\n", "<br/>")
+            story.append(Paragraph(text, body))
+            story.append(Spacer(1, 10))
+
+    # ── Doctor Notes Section ────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph("Physician Notes", h2))
+    story.append(Paragraph("(Space reserved for clinician annotations, diagnosis, and treatment plan.)", small))
+    story.append(Spacer(1, 10))
+    for _ in range(10):
+        story.append(HRFlowable(width="100%", color=colors.HexColor("#cccccc"), thickness=0.5, spaceAfter=18))
+
+    story.append(Spacer(1, 20))
+    story.append(Paragraph(
+        "***CDSCO COMPLIANCE DISCLAIMER:*** MediScan AI is a Clinical Decision Support System (CDSS). "
+        "The information in this document is generated by an artificial intelligence model and is strictly "
+        "for triage and informational purposes. It is NOT a substitute for professional medical advice, "
+        "diagnosis, or treatment. This summary is intended to assist — not replace — clinical judgment.",
+        ParagraphStyle("disclaimer", parent=styles["Normal"], fontSize=8, textColor=colors.gray, spaceBefore=10),
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
 
 
 CITY_COORDS = {
@@ -418,6 +573,10 @@ with tab1:
     if user_text or is_new_audio:
         profile = active_record["profile"]
 
+        active_record["last_intake"] = {
+            "severity": severity, "duration": duration, "onset": onset, "body_areas": body_areas,
+        }
+
         intake_summary = (
             f"\nSTRUCTURED INTAKE:\n- Severity: {severity}/10\n- Duration: {duration}\n"
             f"- Onset: {onset}\n- Affected area(s): {', '.join(body_areas) if body_areas else 'Not specified'}\n"
@@ -532,6 +691,76 @@ You must translate your entire response, including the differential diagnosis an
             active_record["feedback"] = {}
             active_record.pop("last_processed_audio_hash", None)
             st.rerun()
+
+    st.divider()
+    st.markdown("### 👨⚕️ Share with a Doctor")
+    st.caption(
+        "Generate a clinician-ready PDF summarizing this patient's profile, structured intake, "
+        "AI triage transcript, lab report analyses, and biometric trend — with space reserved for physician notes."
+    )
+
+    has_content = bool(active_record["chat_history"] or active_record["report_history"] or not active_record["health_metrics"].empty)
+    if not has_content:
+        st.caption("Nothing to share yet — run a symptom triage or report analysis first.")
+    else:
+        with st.form("doctor_handoff_form"):
+            dh1, dh2 = st.columns(2)
+            doctor_name = dh1.text_input("Doctor / clinic name (optional)", placeholder="Dr. Sharma, City Care Hospital")
+            doctor_email = dh2.text_input("Doctor's email (optional, for record-keeping)", placeholder="doctor@example.com")
+            referring_note = st.text_area("Note to the doctor (optional)", placeholder="e.g. Patient requests a follow-up appointment this week.", height=70)
+
+            inc1, inc2, inc3 = st.columns(3)
+            include_chat = inc1.checkbox("Include triage transcript", value=bool(active_record["chat_history"]),
+                                          disabled=not active_record["chat_history"])
+            include_reports = inc2.checkbox("Include lab/report analyses", value=bool(active_record["report_history"]),
+                                             disabled=not active_record["report_history"])
+            include_biometrics = inc3.checkbox("Include biometric trend", value=not active_record["health_metrics"].empty,
+                                                disabled=active_record["health_metrics"].empty)
+
+            generate_clicked = st.form_submit_button("📄 Generate Doctor Summary PDF", type="primary", use_container_width=True)
+
+        if generate_clicked:
+            with st.spinner("Compiling clinical handoff PDF..."):
+                pdf_buf = generate_doctor_pdf(
+                    patient_name=st.session_state.active_patient,
+                    record=active_record,
+                    emergency_contact=st.session_state.emergency_contact,
+                    language=st.session_state.app_language,
+                    include_chat=include_chat,
+                    include_reports=include_reports,
+                    include_biometrics=include_biometrics,
+                    doctor_name=doctor_name,
+                    referring_note=referring_note,
+                )
+            st.session_state["_doctor_pdf_bytes"] = pdf_buf.getvalue()
+            st.session_state["_doctor_pdf_meta"] = {
+                "patient": st.session_state.active_patient,
+                "doctor_email": doctor_email,
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            }
+            st.success("✅ Summary ready below.")
+
+        if st.session_state.get("_doctor_pdf_bytes") and st.session_state.get("_doctor_pdf_meta", {}).get("patient") == st.session_state.active_patient:
+            meta = st.session_state["_doctor_pdf_meta"]
+            st.download_button(
+                "📥 Download Doctor Summary PDF",
+                data=st.session_state["_doctor_pdf_bytes"],
+                file_name=f"mediscan_handoff_{st.session_state.active_patient.replace(' ', '_')}_{date.today().isoformat()}.pdf",
+                mime="application/pdf", use_container_width=True,
+            )
+            if meta.get("doctor_email"):
+                if st.button(f"✉️ Mark as sent to {meta['doctor_email']}", use_container_width=True):
+                    fire_emergency_webhook({
+                        "alert": "doctor_handoff_shared",
+                        "patient": meta["patient"],
+                        "doctor_email": meta["doctor_email"],
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                    st.info(
+                        f"📨 In a production deployment this would email the PDF to **{meta['doctor_email']}** "
+                        "via a secure clinical messaging integration. For this prototype, download and share it manually.",
+                        icon="ℹ️",
+                    )
 
 # ── Tab 2: Medical Report Interpreter ─────────────────────────────────────────
 with tab2:
