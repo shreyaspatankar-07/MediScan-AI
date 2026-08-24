@@ -620,12 +620,12 @@ with tab4:
                     temp_video.write(uploaded_video.read())
                     temp_video_path = temp_video.name
 
-                # YOLO Pose estimation loop before Gemini analysis
-                st.markdown("### 🏃‍♂️ Virtual Biomechanics Tracker")
+                st.markdown("### 🏃♂️ Virtual Biomechanics Tracker")
                 frame_window = st.empty() # Placeholder for live video playback
 
                 with st.spinner("Initializing YOLO Pose Estimation..."):
-                    model = YOLO("yolov8n-pose.pt") # Automatically downloads the lightweight model
+                    # Automatically downloads the lightweight nano model
+                    model = YOLO("yolov8n-pose.pt") 
                     cap = cv2.VideoCapture(temp_video_path)
                     
                     while cap.isOpened():
@@ -636,10 +636,10 @@ with tab4:
                         # Run pose estimation
                         results = model(frame, verbose=False)
                         
-                        # Automatically draws the stickman skeleton
+                        # Automatically draws the stickman skeleton over the user
                         annotated_frame = results[0].plot() 
                         
-                        # Convert BGR to RGB for Streamlit and render
+                        # Convert BGR to RGB for Streamlit and render live
                         rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                         frame_window.image(rgb_frame, channels="RGB")
                         
