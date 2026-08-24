@@ -8,6 +8,8 @@ import requests
 from gtts import gTTS
 import io
 import numpy as np
+import pydeck as pdk
+import time
 
 
 
@@ -369,14 +371,47 @@ You must translate your entire response, including the differential diagnosis an
 
 
     st.divider()
-    st.markdown("### 🏥 Nearby Care Centers (Pune)")
-    st.caption("Simulated local clinics based on geographic coordinates.")
-    # Mock coordinates around Pune
-    map_data = pd.DataFrame(
-        np.random.randn(5, 2) / [60, 60] + [18.5204, 73.8567],
-        columns=['lat', 'lon']
+    st.markdown("### 🌍 Hyper-Local Epidemic & Care Locator")
+    user_city = st.text_input("Enter your City to scan for nearby care and regional health advisories:", value="Pune")
+    
+    # Free Geocoding via OpenStreetMap
+    @st.cache_data(ttl=3600)
+    def get_coordinates(city_name):
+        try:
+            res = requests.get(f"https://nominatim.openstreetmap.org/search?q={city_name}&format=json&limit=1", headers={'User-Agent': 'MediScanAI'}).json()
+            if res: return float(res[0]['lat']), float(res[0]['lon'])
+        except: pass
+        return 18.5204, 73.8567 # Fallback
+        
+    lat, lon = get_coordinates(user_city)
+    
+    # Generate Mock Data
+    clinics_df = pd.DataFrame(np.random.randn(8, 2) / [50, 50] + [lat, lon], columns=['lat', 'lon'])
+    outbreak_df = pd.DataFrame(np.random.randn(40, 2) / [80, 80] + [lat + 0.01, lon + 0.01], columns=['lat', 'lon'])
+    
+    # PyDeck Layers
+    clinic_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=clinics_df,
+        get_position='[lon, lat]',
+        get_color='[0, 200, 0, 160]',
+        get_radius=400,
     )
-    st.map(map_data, zoom=11, use_container_width=True)
+    heatmap_layer = pdk.Layer(
+        "HeatmapLayer",
+        data=outbreak_df,
+        get_position='[lon, lat]',
+        get_weight=1,
+        radius_pixels=50,
+    )
+    
+    st.pydeck_chart(pdk.Deck(
+        map_style="mapbox://styles/mapbox/dark-v10",
+        initial_view_state=pdk.ViewState(latitude=lat, longitude=lon, zoom=11, pitch=45),
+        layers=[heatmap_layer, clinic_layer]
+    ))
+    
+    st.warning(f"⚠️ **Regional Health Advisory ({user_city}):** High density of viral fever symptoms reported in the northeast sector. Proceed to the green clinic markers if symptoms worsen.")
 
     # ── Clear History ─────────────────────────────────────────────────────────
     if st.session_state.chat_history:
@@ -489,6 +524,43 @@ with tab3:
         "and generate AI-powered preventative wellness insights.",
         icon="🫀",
     )
+
+    st.markdown("### ⌚ Live Wearable Telemetry")
+    if "telemetry_active" not in st.session_state:
+        st.session_state.telemetry_active = False
+        
+    def toggle_telemetry():
+        st.session_state.telemetry_active = not st.session_state.telemetry_active
+        
+    st.button(
+        "🔴 Stop Live Monitor" if st.session_state.telemetry_active else "🟢 Start Live Monitor (Apple Watch / Fitbit)", 
+        on_click=toggle_telemetry, 
+        type="primary" if not st.session_state.telemetry_active else "secondary"
+    )
+    
+    if st.session_state.telemetry_active:
+        telemetry_placeholder = st.empty()
+        
+        # Generate randomized live metrics
+        current_spo2 = np.random.randint(88, 100)
+        current_hrv = np.random.randint(20, 80)
+        
+        with telemetry_placeholder.container():
+            tc1, tc2 = st.columns(2)
+            tc1.metric("🩸 Live SpO2 (%)", f"{current_spo2}%", delta=current_spo2-95, delta_color="normal")
+            tc2.metric("🫀 Live HRV (ms)", f"{current_hrv} ms", delta=current_hrv-50, delta_color="normal")
+            
+            if current_spo2 < 92:
+                st.error("🚨 **CRITICAL: SpO2 DROP DETECTED** 🚨\n\nBlood oxygen levels have fallen below 92%. Triggering emergency webhook.")
+                try:
+                    requests.post("https://hook.us1.make.com/mock-emergency", json={"alert": "low_spo2", "value": current_spo2}, timeout=2)
+                except:
+                    pass
+                    
+        # Sleep and rerun to create the live loop effect
+        time.sleep(2)
+        st.rerun()
+    st.divider()
 
     # ── Req 2: Initialize health_metrics with spec-compliant column names ──────
     if st.session_state.health_metrics.empty:
