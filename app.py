@@ -3,6 +3,7 @@ import pandas as pd
 from PIL import Image
 from google import genai
 from google.genai import types
+from groq import Groq
 
 # ── Page Configuration ───────────────────────────────────────────────────────
 st.set_page_config(
@@ -19,6 +20,13 @@ try:
 except Exception:
     client = None
     _api_ready = False
+
+# ── Groq Client ───────────────────────────────────────────────────────────────
+try:
+    groq_key = st.secrets.get("GROQ_API_KEY")
+    groq_client = Groq(api_key=groq_key) if groq_key else None
+except Exception:
+    groq_client = None
 
 # ── Triage System Instruction ─────────────────────────────────────────────────
 TRIAGE_SYSTEM_INSTRUCTION = """
@@ -109,6 +117,14 @@ with st.sidebar:
             "⚠️ **API key not configured.**\n\n"
             "Add your key to `.streamlit/secrets.toml`:\n"
             "```toml\nGEMINI_API_KEY = \"your-key-here\"\n```",
+            icon="🔑",
+        )
+
+    if groq_client is None:
+        st.warning(
+            "⚠️ **Groq API key not configured.**\n\n"
+            "Add your key to `.streamlit/secrets.toml`:\n"
+            "```toml\nGROQ_API_KEY = \"your-key-here\"\n```",
             icon="🔑",
         )
 
@@ -246,42 +262,47 @@ CRITICAL LANGUAGE INSTRUCTION:
 You must translate your entire response, including the differential diagnosis and recommended steps, into {st.session_state.app_language}. Ensure medical terms are accurately translated or transliterated. The CDSCO disclaimer must also be translated into {st.session_state.app_language}.
 """
 
-        display_text = user_text if user_text else "🎙️ *Voice message recorded*"
+        final_symptom_text = user_text or ""
 
-        # Show the user bubble immediately
-        with st.chat_message("user"):
-            st.markdown(display_text)
-        st.session_state.chat_history.append({"role": "user", "content": display_text})
-
-        # Build contents_payload from full chat history to support continuation
-        contents_payload = []
-        for i, msg in enumerate(st.session_state.chat_history):
-            role = "model" if msg["role"] == "assistant" else "user"
-            parts = [types.Part.from_text(text=msg["content"])]
-            
-            # Attach audio bytes to the last user message if audio was recorded in this turn
-            if i == len(st.session_state.chat_history) - 1 and is_new_audio:
-                audio_bytes = audio_value.read()
-                parts.append(
-                    types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav")
-                )
-                
-            contents_payload.append(types.Content(role=role, parts=parts))
-
-        # Call gemini-3.6-flash with the conversation payload and dynamic system instruction
-        with st.chat_message("assistant"):
-            with st.spinner("🧠 Analysing symptoms…"):
+        # If audio_value is not None and is new, transcribe it using Groq Whisper
+        if is_new_audio and audio_value is not None:
+            with st.spinner("🎙️ Transcribing audio with Groq Whisper..."):
                 try:
-                    response = client.models.generate_content(
-                        model="gemini-3.6-flash",
-                        contents=contents_payload,
-                        config=types.GenerateContentConfig(
-                            system_instruction=dynamic_system_instruction,
-                        ),
+                    transcription = groq_client.audio.transcriptions.create(
+                        file=("audio.wav", audio_value.read()),
+                        model="whisper-large-v3"
                     )
-                    assistant_reply = response.text
+                    if final_symptom_text:
+                        final_symptom_text += f"\nVoice note: {transcription.text}"
+                    else:
+                        final_symptom_text = transcription.text
                 except Exception as exc:
-                    assistant_reply = f"⚠️ **Error communicating with Gemini:** `{exc}`"
+                    st.error(f"🎙️ Whisper transcription error: {exc}")
+
+        # Display final_symptom_text in a st.chat_message("user") block and append it to st.session_state.chat_history (with role "user").
+        if final_symptom_text.strip():
+            with st.chat_message("user"):
+                st.markdown(final_symptom_text)
+            st.session_state.chat_history.append({"role": "user", "content": final_symptom_text})
+
+            # Build a messages_payload list for the Groq chat completion.
+            messages_payload = [{"role": "system", "content": dynamic_system_instruction}]
+            for msg in st.session_state.chat_history:
+                # Groq uses assistant instead of model
+                role = "assistant" if msg["role"] == "assistant" else "user"
+                messages_payload.append({"role": role, "content": msg["content"]})
+
+            # Wrap the API call in with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
+            with st.chat_message("assistant"):
+                with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
+                    try:
+                        response = groq_client.chat.completions.create(
+                            model="llama-3.1-8b-instant",
+                            messages=messages_payload
+                        )
+                        assistant_reply = response.choices[0].message.content
+                    except Exception as exc:
+                        assistant_reply = f"⚠️ **Error communicating with Groq:** `{exc}`"
 
             st.markdown(assistant_reply)
 
@@ -502,17 +523,17 @@ with tab3:
         with st.spinner(f"🧠 Health Coach is analysing your biometric trends in {st.session_state.app_language}..."):
             try:
                 lang_coach_instruction = HEALTH_COACH_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your 3-bullet-point wellness recommendation and the CDSCO disclaimer entirely in {st.session_state.app_language}."
-                response = client.models.generate_content(
-                    model="gemini-3.6-flash",
-                    contents=[coach_prompt],
-                    config=types.GenerateContentConfig(
-                        system_instruction=lang_coach_instruction,
-                    ),
+                response = groq_client.chat.completions.create(
+                    model="llama-3.1-8b-instant",
+                    messages=[
+                        {"role": "system", "content": lang_coach_instruction},
+                        {"role": "user", "content": coach_prompt}
+                    ]
                 )
-                st.session_state.coach_recommendation = response.text
+                st.session_state.coach_recommendation = response.choices[0].message.content
             except Exception as exc:
                 st.session_state.coach_recommendation = (
-                    f"⚠️ **Gemini API error:** `{exc}`"
+                    f"⚠️ **Groq API error:** `{exc}`"
                 )
 
     # Display the AI response below the chart
