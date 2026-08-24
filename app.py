@@ -260,7 +260,7 @@ You must translate your entire response, including the differential diagnosis an
             with st.spinner("🧠 Analysing symptoms…"):
                 try:
                     response = client.models.generate_content(
-                        model="gemini-2.0-flash",
+                        model="gemini-3.6-flash",
                         contents=contents_payload,
                         config=types.GenerateContentConfig(
                             system_instruction=dynamic_system_instruction,
@@ -339,7 +339,7 @@ with tab2:
                     # Req 5: Pass text string + Pillow image object directly;
                     #         apply VISION_SYSTEM_INSTRUCTION via GenerateContentConfig
                     response = client.models.generate_content(
-                        model="gemini-2.0-flash",
+                        model="gemini-3.6-flash",
                         contents=["Please analyze this medical image.", pil_image],
                         config=types.GenerateContentConfig(
                             system_instruction=lang_vision_instruction,
@@ -486,7 +486,7 @@ with tab3:
             try:
                 lang_coach_instruction = HEALTH_COACH_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your 3-bullet-point wellness recommendation and the CDSCO disclaimer entirely in {st.session_state.app_language}."
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-3.6-flash",
                     contents=[coach_prompt],
                     config=types.GenerateContentConfig(
                         system_instruction=lang_coach_instruction,
