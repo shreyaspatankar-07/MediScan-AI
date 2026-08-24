@@ -386,16 +386,27 @@ You must translate your entire response, including the differential diagnosis an
     ]
     user_city = st.selectbox("Select or type your City to locate clinics:", options=cities_list, index=cities_list.index("Pune"))
     
-    # Free Geocoding via OpenStreetMap
-    @st.cache_data(ttl=3600)
-    def get_coordinates(city_name):
-        try:
-            res = requests.get(f"https://nominatim.openstreetmap.org/search?q={city_name}&format=json&limit=1", headers={'User-Agent': 'MediScanAI'}).json()
-            if res: return float(res[0]['lat']), float(res[0]['lon'])
-        except: pass
-        return 18.5204, 73.8567 # Fallback
-        
-    lat, lon = get_coordinates(user_city)
+    # Pre-defined city coordinates map to prevent rate-limiting and ensure 100% offline reliability
+    city_coords = {
+        "Pune": (18.5204, 73.8567), "Mumbai": (19.0760, 72.8777), "Delhi": (28.6139, 77.2090),
+        "Bangalore": (12.9716, 77.5946), "Hyderabad": (17.3850, 78.4867), "Chennai": (13.0827, 80.2707),
+        "Kolkata": (22.5726, 88.3639), "Ahmedabad": (23.0225, 72.5714), "Nagpur": (21.1458, 79.0882),
+        "Jaipur": (26.9124, 75.7873), "Lucknow": (26.8467, 80.9462), "Patna": (25.5941, 85.1376),
+        "Indore": (22.7196, 75.8577), "Thane": (19.2183, 72.9781), "Bhopal": (23.2599, 77.4126),
+        "Visakhapatnam": (17.6868, 83.2185), "Vadodara": (22.3072, 73.1812), "Ghaziabad": (28.6692, 77.4538),
+        "Surat": (21.1702, 72.8311), "Kanpur": (26.4499, 80.3319), "Ludhiana": (30.9010, 75.8573), 
+        "Agra": (27.1767, 78.0081), "Nashik": (19.9975, 73.7898), "Faridabad": (28.4089, 77.3178), 
+        "Meerut": (28.9845, 77.7064), "Rajkot": (22.3039, 70.8022), "Kalyan-Dombivli": (19.2403, 73.1305), 
+        "Vasai-Virar": (19.3913, 72.8397), "Varanasi": (25.3176, 82.9739), "Srinagar": (34.0837, 74.7973), 
+        "Aurangabad": (19.8762, 75.3433), "Dhanbad": (23.7957, 86.4304), "Amritsar": (31.6340, 74.8723), 
+        "Navi Mumbai": (19.0330, 73.0297), "Allahabad": (25.4358, 81.8463), "Ranchi": (23.3441, 85.3096), 
+        "Howrah": (22.5958, 88.2636), "Coimbatore": (11.0168, 76.9558), "Jabalpur": (22.1760, 79.9300), 
+        "Gwalior": (26.2183, 78.1828), "Vijayawada": (16.5062, 80.6480), "Jodhpur": (26.2389, 73.0243), 
+        "Madurai": (9.9252, 78.1198), "Raipur": (21.2514, 81.6296), "Kota": (25.2138, 75.8648), 
+        "Guwahati": (26.1445, 91.7362), "Chandigarh": (30.7333, 76.7794), "Solapur": (17.6599, 75.9064), 
+        "Hubli-Dharwad": (15.3647, 75.1240), "Amravati": (20.9374, 77.7796)
+    }
+    lat, lon = city_coords.get(user_city, (18.5204, 73.8567))
     
     # Generate mock clinic coordinates around the resolved city
     map_data = pd.DataFrame(
