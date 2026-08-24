@@ -3,7 +3,5 @@ google-genai
 pandas
 pillow
 groq
-opencv-python-headless
-mediapipe
 requests==2.31.0
 gTTS==2.5.1

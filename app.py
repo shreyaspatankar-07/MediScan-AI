@@ -8,25 +8,7 @@ import requests
 from gtts import gTTS
 import io
 import numpy as np
-import tempfile
-import os
-import cv2
-from ultralytics import YOLO
-import mediapipe as mp
 
-# Function to calculate interior angle between three joints
-def calculate_angle(a, b, c):
-    a = np.array(a)  # Shoulder
-    b = np.array(b)  # Elbow
-    c = np.array(c)  # Wrist
-    
-    radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
-    angle = np.abs(radians * 180.0 / np.pi)
-    
-    if angle > 180.0:
-        angle = 360.0 - angle
-        
-    return angle
 
 
 
@@ -114,14 +96,6 @@ if "report_result" not in st.session_state:
 
 if "coach_recommendation" not in st.session_state:
     st.session_state.coach_recommendation = None
-
-if "kinetic_routine" not in st.session_state:
-    st.session_state.kinetic_routine = None
-
-if "kinetic_vision_result" not in st.session_state:
-    st.session_state.kinetic_vision_result = None
-
-
 
 if "health_metrics" not in st.session_state:
     st.session_state.health_metrics = pd.DataFrame()
@@ -256,11 +230,10 @@ st.markdown("# 🩺 MediScan AI")
 st.markdown("*Your intelligent medical assistant powered by Google Gemini*")
 st.markdown("---")
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3 = st.tabs([
     "🔬 Symptom Analyzer",
     "📄 Medical Report Interpreter",
     "📊 Health Dashboard",
-    "🏃 AI Kinetic Coach",
 ])
 
 # ── Tab 1: Symptom Analyzer ───────────────────────────────────────────────────
@@ -657,148 +630,6 @@ with tab3:
             st.session_state.coach_recommendation = None
             st.rerun()
 
-# ── Tab 4: AI Kinetic Coach ───────────────────────────────────────────────────
-with tab4:
-    st.markdown("## 🏃 AI Kinetic Coach")
-    st.info(
-        "Get custom, age-appropriate physical exercise routines and perform posture biomechanics analysis.",
-        icon="🏃",
-    )
-
-    # Requirement 2: Age-Based Recommendations
-    if st.button("Generate Daily Routine", key="generate_kinetic_routine", type="primary", use_container_width=True):
-        profile = st.session_state.patient_profile
-        age = profile.get("age")
-        conditions = profile.get("chronic_conditions") or "None reported"
-
-        if not age:
-            st.warning("⚠️ Please fill out the Patient Profile (specifically Age) in the sidebar to generate a suitable routine.")
-        else:
-            with st.spinner("🧠 Generating your custom exercise routine..."):
-                try:
-                    prompt = f"The patient is {age} years old with the following conditions: {conditions}. Recommend 3 daily exercises suitable for their demographic. Format with emojis and clear instructions."
-                    
-                    response = groq_client.chat.completions.create(
-                        model="openai/gpt-oss-20b",
-                        messages=[
-                            {"role": "system", "content": "You are the MediScan AI Kinetic Coach, an expert fitness trainer and physical therapist. Provide highly safe, targeted, and age-appropriate physical exercise plans based on the patient's conditions. Always end your response with the CDSCO compliance disclaimer."},
-                            {"role": "user", "content": prompt}
-                        ]
-                    )
-                    st.session_state.kinetic_routine = response.choices[0].message.content
-                except Exception as exc:
-                    st.session_state.kinetic_routine = f"⚠️ **Groq API error:** `{exc}`"
-
-    if st.session_state.kinetic_routine:
-        st.markdown("---")
-        st.markdown("#### 🏃 Recommended Exercise Routine")
-        st.markdown(st.session_state.kinetic_routine)
-        if st.button("🗑️ Clear Routine", key="clear_kinetic_routine"):
-            st.session_state.kinetic_routine = None
-            st.rerun()
-
-    st.markdown("---")
-    st.markdown("### 🏋️‍♂️ AI Gym Trainer (Bicep Curl Tracker)")
-    
-    uploaded_video = st.file_uploader(
-        "Upload Bicep Curl Exercise Video",
-        type=["mp4", "mov", "avi"],
-        help="Upload a video of your bicep curls to analyze your reps and posture."
-    )
-
-    if uploaded_video is not None:
-        st.info("📹 Video file loaded. Click the button below to start the AI Gym Trainer.")
-
-        if st.button("🚀 Start AI Gym Trainer", key="start_gym_trainer", type="primary", use_container_width=True):
-            try:
-                # Save bytes to a temporary file
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
-                    temp_video.write(uploaded_video.read())
-                    temp_video_path = temp_video.name
-
-                st.markdown("### 📊 Real-Time Rep Counter & Form Tracker")
-                frame_window = st.empty() # Placeholder for live video playback
-
-                # Rep Counter State Variables
-                counter = 0
-                stage = None
-                feedback = "Get in position"
-
-                with st.spinner("Initializing MediaPipe Pose Landmarker..."):
-                    mp_pose = mp.solutions.pose
-                    # Initialize Pose landmarker
-                    pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-                    cap = cv2.VideoCapture(temp_video_path)
-                    
-                    while cap.isOpened():
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
-                            
-                        h, w, _ = frame.shape
-                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        
-                        # Process with MediaPipe
-                        results = pose.process(rgb_frame)
-                        
-                        if results.pose_landmarks:
-                            landmarks = results.pose_landmarks.landmark
-                            
-                            # Left Arm Keypoints: Shoulder (11), Elbow (13), Wrist (15)
-                            shoulder = [landmarks[11].x * w, landmarks[11].y * h]
-                            elbow    = [landmarks[13].x * w, landmarks[13].y * h]
-                            wrist    = [landmarks[15].x * w, landmarks[15].y * h]
-                            
-                            # Calculate Elbow Angle
-                            angle = calculate_angle(shoulder, elbow, wrist)
-                            
-                            # Rep Counting & Form Feedback Logic
-                            if angle > 160:
-                                stage = "Down"
-                                feedback = "Good extension! Now curl up."
-                            if angle < 30 and stage == 'Down':
-                                stage = "Up"
-                                counter += 1
-                                feedback = "Rep completed!"
-                            elif angle > 30 and angle < 90 and stage == "Down":
-                                feedback = "Keep curling all the way up!"
-
-                            # Draw Joint Overlay on Elbow
-                            cv2.circle(frame, (int(elbow[0]), int(elbow[1])), 10, (0, 255, 255), -1)
-                            cv2.putText(frame, f"{int(angle)} deg", (int(elbow[0]) + 15, int(elbow[1])),
-                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-                        # Render HUD Box
-                        cv2.rectangle(frame, (0, 0), (320, 100), (245, 117, 16), -1)
-                        
-                        # Render Rep Counter
-                        cv2.putText(frame, 'REPS', (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-                        cv2.putText(frame, str(counter), (15, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (255, 255, 255), 2)
-                        
-                        # Render Stage State
-                        cv2.putText(frame, 'STAGE', (120, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-                        cv2.putText(frame, str(stage), (120, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (255, 255, 255), 2)
-
-                        # Render Guidance Feedback
-                        cv2.putText(frame, feedback, (10, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-                        # Convert BGR to RGB for Streamlit and render live
-                        rgb_output = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        frame_window.image(rgb_output, channels="RGB")
-                        
-                    cap.release()
-                    pose.close()
-
-                # Clean up the temp file
-                os.remove(temp_video_path)
-                st.success(f"Workout finished! Total Reps: {counter}")
-            except Exception as exc:
-                st.error(f"⚠️ **Gym Trainer error:** `{exc}`")
-                if 'temp_video_path' in locals() and os.path.exists(temp_video_path):
-                    try:
-                        os.remove(temp_video_path)
-                    except Exception:
-                        pass
 
 
 
