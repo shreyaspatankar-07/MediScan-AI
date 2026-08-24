@@ -479,10 +479,25 @@ with tab2:
                         f"⚠️ **Gemini API error:** `{exc}`"
                     )
 
-        # Req 6: Render result inside an expander
         if st.session_state.report_result:
-            with st.expander("View Diagnostic Analysis", expanded=True):
+            with st.expander("👁️ Primary Analysis (Gemini Vision)", expanded=True):
                 st.markdown(st.session_state.report_result)
+                
+            st.markdown("---")
+            st.markdown("#### ⚖️ Multi-Agent Cross-Verification")
+            if st.button("Request Second Opinion (Groq Llama 3)", type="secondary", use_container_width=True):
+                with st.spinner("Consulting Groq Llama 3 Synthesizer..."):
+                    try:
+                        second_opinion = groq_client.chat.completions.create(
+                            model="openai/gpt-oss-20b",
+                            messages=[
+                                {"role": "system", "content": "You are a Senior Medical Synthesizer. Review the primary AI's OCR report analysis. Provide a brief second opinion, highlight any missed nuances, and give a final unified consensus."},
+                                {"role": "user", "content": f"Primary Analysis:\n{st.session_state.report_result}"}
+                            ]
+                        )
+                        st.info(second_opinion.choices[0].message.content, icon="🤖")
+                    except Exception as exc:
+                        st.error(f"Error generating second opinion: {exc}")
 
             if st.button("🗑️ Clear Analysis", key="clear_report"):
                 st.session_state.report_result = None
