@@ -9,6 +9,22 @@ import tempfile
 import os
 import cv2
 from ultralytics import YOLO
+import mediapipe as mp
+
+# Function to calculate interior angle between three joints
+def calculate_angle(a, b, c):
+    a = np.array(a)  # Shoulder
+    b = np.array(b)  # Elbow
+    c = np.array(c)  # Wrist
+    
+    radians = np.arctan2(c[1] - b[1], c[0] - b[0]) - np.arctan2(a[1] - b[1], a[0] - b[0])
+    angle = np.abs(radians * 180.0 / np.pi)
+    
+    if angle > 180.0:
+        angle = 360.0 - angle
+        
+    return angle
+
 
 
 # ── Page Configuration ───────────────────────────────────────────────────────
@@ -601,31 +617,36 @@ with tab4:
             st.rerun()
 
     st.markdown("---")
-    st.markdown("### 🎥 Posture Biomechanics Analysis (Gemini Video)")
+    st.markdown("### 🏋️‍♂️ AI Gym Trainer (Bicep Curl Tracker)")
     
-    # Requirement 1: Update Uploader to accept video formats
     uploaded_video = st.file_uploader(
-        "Upload Exercise Video (Push-up/Squat)",
+        "Upload Bicep Curl Exercise Video",
         type=["mp4", "mov", "avi"],
-        help="Upload a video of you performing an exercise to analyze posture and form."
+        help="Upload a video of your bicep curls to analyze your reps and posture."
     )
 
     if uploaded_video is not None:
-        st.info("📹 Video file loaded. Click the button below to upload and analyze.")
+        st.info("📹 Video file loaded. Click the button below to start the AI Gym Trainer.")
 
-        if st.button("🔍 Analyze Posture Biomechanics", key="analyze_posture_vision", type="primary", use_container_width=True):
+        if st.button("🚀 Start AI Gym Trainer", key="start_gym_trainer", type="primary", use_container_width=True):
             try:
-                # Requirement 3: Video Processing Logic (save bytes to a temporary file)
+                # Save bytes to a temporary file
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
                     temp_video.write(uploaded_video.read())
                     temp_video_path = temp_video.name
 
-                st.markdown("### 🏃♂️ Virtual Biomechanics Tracker")
+                st.markdown("### 📊 Real-Time Rep Counter & Form Tracker")
                 frame_window = st.empty() # Placeholder for live video playback
 
-                with st.spinner("Initializing YOLO Pose Estimation..."):
-                    # Automatically downloads the lightweight nano model
-                    model = YOLO("yolov8n-pose.pt") 
+                # Rep Counter State Variables
+                counter = 0
+                stage = None
+                feedback = "Get in position"
+
+                with st.spinner("Initializing MediaPipe Pose Landmarker..."):
+                    mp_pose = mp.solutions.pose
+                    # Initialize Pose landmarker
+                    pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
                     cap = cv2.VideoCapture(temp_video_path)
                     
                     while cap.isOpened():
@@ -633,45 +654,71 @@ with tab4:
                         if not ret:
                             break
                             
-                        # Run pose estimation
-                        results = model(frame, verbose=False)
+                        h, w, _ = frame.shape
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                         
-                        # Automatically draws the stickman skeleton over the user
-                        annotated_frame = results[0].plot() 
+                        # Process with MediaPipe
+                        results = pose.process(rgb_frame)
                         
+                        if results.pose_landmarks:
+                            landmarks = results.pose_landmarks.landmark
+                            
+                            # Left Arm Keypoints: Shoulder (11), Elbow (13), Wrist (15)
+                            shoulder = [landmarks[11].x * w, landmarks[11].y * h]
+                            elbow    = [landmarks[13].x * w, landmarks[13].y * h]
+                            wrist    = [landmarks[15].x * w, landmarks[15].y * h]
+                            
+                            # Calculate Elbow Angle
+                            angle = calculate_angle(shoulder, elbow, wrist)
+                            
+                            # Rep Counting & Form Feedback Logic
+                            if angle > 160:
+                                stage = "Down"
+                                feedback = "Good extension! Now curl up."
+                            if angle < 30 and stage == 'Down':
+                                stage = "Up"
+                                counter += 1
+                                feedback = "Rep completed!"
+                            elif angle > 30 and angle < 90 and stage == "Down":
+                                feedback = "Keep curling all the way up!"
+
+                            # Draw Joint Overlay on Elbow
+                            cv2.circle(frame, (int(elbow[0]), int(elbow[1])), 10, (0, 255, 255), -1)
+                            cv2.putText(frame, f"{int(angle)} deg", (int(elbow[0]) + 15, int(elbow[1])),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+                        # Render HUD Box
+                        cv2.rectangle(frame, (0, 0), (320, 100), (245, 117, 16), -1)
+                        
+                        # Render Rep Counter
+                        cv2.putText(frame, 'REPS', (15, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                        cv2.putText(frame, str(counter), (15, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (255, 255, 255), 2)
+                        
+                        # Render Stage State
+                        cv2.putText(frame, 'STAGE', (120, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                        cv2.putText(frame, str(stage), (120, 80), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (255, 255, 255), 2)
+
+                        # Render Guidance Feedback
+                        cv2.putText(frame, feedback, (10, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
                         # Convert BGR to RGB for Streamlit and render live
-                        rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                        frame_window.image(rgb_frame, channels="RGB")
+                        rgb_output = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        frame_window.image(rgb_output, channels="RGB")
                         
                     cap.release()
-
-                # Requirement 4: Upload and Analyze with Gemini
-                with st.spinner("Uploading and analyzing video biomechanics via Gemini..."):
-                    uploaded_video_gemini = client.files.upload(file=temp_video_path)
-
-                    response = client.models.generate_content(
-                        model="gemini-3.6-flash",
-                        contents=["You are an expert biomechanics coach. Watch this video of a user performing an exercise. Identify the exercise, evaluate their posture frame-by-frame (e.g., back alignment, depth, joint angles), and provide 3 specific corrections to improve their form.", uploaded_video_gemini]
-                    )
-                    st.session_state.kinetic_vision_result = response.text
+                    pose.close()
 
                 # Clean up the temp file
                 os.remove(temp_video_path)
+                st.success(f"Workout finished! Total Reps: {counter}")
             except Exception as exc:
-                st.session_state.kinetic_vision_result = f"⚠️ **Gemini Video error:** `{exc}`"
+                st.error(f"⚠️ **Gym Trainer error:** `{exc}`")
                 if 'temp_video_path' in locals() and os.path.exists(temp_video_path):
                     try:
                         os.remove(temp_video_path)
                     except Exception:
                         pass
 
-    if st.session_state.kinetic_vision_result:
-        st.markdown("---")
-        st.markdown("#### 🏃 Biomechanics Coach Response")
-        st.markdown(st.session_state.kinetic_vision_result)
-        if st.button("🗑️ Clear Analysis", key="clear_kinetic_vision"):
-            st.session_state.kinetic_vision_result = None
-            st.rerun()
 
 
 
