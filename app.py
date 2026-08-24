@@ -370,6 +370,16 @@ You must translate your entire response, including the differential diagnosis an
         st.rerun()
 
 
+    st.divider()
+    st.markdown("### 🏥 Nearby Care Centers (Pune)")
+    st.caption("Simulated local clinics based on current geographic coordinates.")
+    # Generate mock clinic coordinates around Pune (Lat: 18.5204, Lon: 73.8567)
+    map_data = pd.DataFrame(
+        np.random.randn(5, 2) / [60, 60] + [18.5204, 73.8567],
+        columns=['lat', 'lon']
+    )
+    st.map(map_data, zoom=11, use_container_width=True)
+
     # ── Clear History ─────────────────────────────────────────────────────────
     if st.session_state.chat_history:
         st.divider()
