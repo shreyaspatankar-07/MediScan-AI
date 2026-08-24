@@ -217,7 +217,20 @@ with tab1:
     )
 
     # ── Handle Submission ─────────────────────────────────────────────────────
-    if user_text or audio_value:
+    import hashlib
+
+    is_new_audio = False
+    audio_hash = None
+    if audio_value:
+        try:
+            audio_bytes = audio_value.getvalue()
+            audio_hash = hashlib.md5(audio_bytes).hexdigest()
+            if "last_processed_audio_hash" not in st.session_state or st.session_state.last_processed_audio_hash != audio_hash:
+                is_new_audio = True
+        except Exception:
+            pass
+
+    if user_text or is_new_audio:
         profile = st.session_state.patient_profile
 
         # Dynamic system instruction that includes the latest patient profile context
@@ -247,7 +260,7 @@ You must translate your entire response, including the differential diagnosis an
             parts = [types.Part.from_text(text=msg["content"])]
             
             # Attach audio bytes to the last user message if audio was recorded in this turn
-            if i == len(st.session_state.chat_history) - 1 and audio_value:
+            if i == len(st.session_state.chat_history) - 1 and is_new_audio:
                 audio_bytes = audio_value.read()
                 parts.append(
                     types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav")
@@ -275,6 +288,8 @@ You must translate your entire response, including the differential diagnosis an
         st.session_state.chat_history.append(
             {"role": "assistant", "content": assistant_reply}
         )
+        if audio_hash:
+            st.session_state.last_processed_audio_hash = audio_hash
         st.rerun()
 
 
@@ -283,6 +298,8 @@ You must translate your entire response, including the differential diagnosis an
         st.divider()
         if st.button("🗑️ Clear Chat History", key="clear_symptom_chat"):
             st.session_state.chat_history = []
+            if "last_processed_audio_hash" in st.session_state:
+                del st.session_state.last_processed_audio_hash
             st.rerun()
 
 # ── Tab 2: Medical Report Interpreter ─────────────────────────────────────
