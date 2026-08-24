@@ -5,6 +5,8 @@ from google import genai
 from google.genai import types
 from groq import Groq
 import requests
+from gtts import gTTS
+import io
 import numpy as np
 import tempfile
 import os
@@ -337,6 +339,19 @@ You must translate your entire response, including the differential diagnosis an
                         assistant_reply = f"⚠️ **Error communicating with Groq:** `{exc}`"
 
             st.markdown(assistant_reply)
+
+            lang_map = {"English": "en", "Hindi (हिन्दी)": "hi", "Marathi (मराठी)": "mr", "Bengali (বাংলা)": "bn", "Spanish (Español)": "es"}
+            tts_lang = lang_map.get(st.session_state.app_language, "en")
+            try:
+                # Clean markdown syntax before speaking
+                clean_text = assistant_reply.replace("*", "").replace("#", "")
+                tts = gTTS(text=clean_text, lang=tts_lang, slow=False)
+                audio_fp = io.BytesIO()
+                tts.write_to_fp(audio_fp)
+                audio_fp.seek(0)
+                st.audio(audio_fp, format="audio/mp3")
+            except Exception as e:
+                st.warning("Audio synthesis is temporarily unavailable.")
 
             critical_keywords = ["urgent care", "emergency", "immediate", "hospital", "chest pain", "stroke"]
             if any(keyword in assistant_reply.lower() for keyword in critical_keywords):
