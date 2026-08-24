@@ -3,5 +3,6 @@ google-genai
 pandas
 pillow
 groq
-ultralytics
+opencv-python-headless
 mediapipe
+requests==2.31.0
