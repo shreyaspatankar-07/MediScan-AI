@@ -9,6 +9,8 @@ from gtts import gTTS
 import io
 import numpy as np
 import time
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 
 
@@ -371,7 +373,18 @@ You must translate your entire response, including the differential diagnosis an
 
     st.divider()
     st.markdown("### 🏥 Nearby Care Centers")
-    user_city = st.text_input("Enter your City to scan for nearby care centers:", value="Pune")
+    
+    cities_list = [
+        "Pune", "Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Kolkata", 
+        "Ahmedabad", "Nagpur", "Jaipur", "Lucknow", "Patna", "Indore", "Thane", 
+        "Bhopal", "Visakhapatnam", "Vadodara", "Ghaziabad", "Amravati", "Surat",
+        "Kanpur", "Ludhiana", "Agra", "Nashik", "Faridabad", "Meerut", "Rajkot",
+        "Kalyan-Dombivli", "Vasai-Virar", "Varanasi", "Srinagar", "Aurangabad",
+        "Dhanbad", "Amritsar", "Navi Mumbai", "Allahabad", "Ranchi", "Howrah",
+        "Coimbatore", "Jabalpur", "Gwalior", "Vijayawada", "Jodhpur", "Madurai",
+        "Raipur", "Kota", "Guwahati", "Chandigarh", "Solapur", "Hubli-Dharwad"
+    ]
+    user_city = st.selectbox("Select or type your City to locate clinics:", options=cities_list, index=cities_list.index("Pune"))
     
     # Free Geocoding via OpenStreetMap
     @st.cache_data(ttl=3600)
@@ -518,26 +531,57 @@ with tab3:
     
     if st.session_state.telemetry_active:
         telemetry_placeholder = st.empty()
-        
-        # Generate randomized live metrics
-        current_spo2 = np.random.randint(88, 100)
-        current_hrv = np.random.randint(20, 80)
-        
-        with telemetry_placeholder.container():
-            tc1, tc2 = st.columns(2)
-            tc1.metric("🩸 Live SpO2 (%)", f"{current_spo2}%", delta=current_spo2-95, delta_color="normal")
-            tc2.metric("🫀 Live HRV (ms)", f"{current_hrv} ms", delta=current_hrv-50, delta_color="normal")
+        if "telemetry_history" not in st.session_state:
+            st.session_state.telemetry_history = []
             
-            if current_spo2 < 92:
-                st.error("🚨 **CRITICAL: SpO2 DROP DETECTED** 🚨\n\nBlood oxygen levels have fallen below 92%. Triggering emergency webhook.")
-                try:
-                    requests.post("https://hook.us1.make.com/mock-emergency", json={"alert": "low_spo2", "value": current_spo2}, timeout=2)
-                except:
-                    pass
-                    
-        # Sleep and rerun to create the live loop effect
-        time.sleep(2)
-        st.rerun()
+        # In-container update loop to prevent full-page reloads and blinking
+        for _ in range(15):
+            if not st.session_state.telemetry_active:
+                break
+                
+            current_spo2 = np.random.randint(88, 100)
+            current_hrv = np.random.randint(20, 80)
+            
+            # Record history
+            st.session_state.telemetry_history.append({
+                "Reading": len(st.session_state.telemetry_history) + 1,
+                "SpO2": current_spo2,
+                "HRV": current_hrv
+            })
+            if len(st.session_state.telemetry_history) > 15:
+                st.session_state.telemetry_history.pop(0)
+                
+            hist_df = pd.DataFrame(st.session_state.telemetry_history)
+            
+            with telemetry_placeholder.container():
+                tc1, tc2 = st.columns(2)
+                tc1.metric("🩸 Live SpO2 (%)", f"{current_spo2}%", delta=current_spo2-95, delta_color="normal")
+                tc2.metric("🫀 Live HRV (ms)", f"{current_hrv} ms", delta=current_hrv-50, delta_color="normal")
+                
+                if current_spo2 < 92:
+                    st.error("🚨 **CRITICAL: SpO2 DROP DETECTED** 🚨\n\nBlood oxygen levels have fallen below 92%. Triggering emergency webhook.")
+                    try:
+                        requests.post("https://hook.us1.make.com/mock-emergency", json={"alert": "low_spo2", "value": current_spo2}, timeout=2)
+                    except:
+                        pass
+                
+                # Plot live trends using Seaborn & Matplotlib
+                fig, ax = plt.subplots(figsize=(6, 2.5))
+                sns.lineplot(data=hist_df, x="Reading", y="SpO2", label="SpO2 (%)", ax=ax, color="red", marker="o")
+                ax2 = ax.twinx()
+                sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax=ax2, color="blue", marker="s")
+                ax.set_title("Live Telemetry Trends (Seaborn)", fontsize=10)
+                ax.set_ylabel("SpO2 (%)", color="red")
+                ax2.set_ylabel("HRV (ms)", color="blue")
+                fig.tight_layout()
+                st.pyplot(fig)
+                plt.close(fig)
+                
+            time.sleep(2)
+            
+        # Rerun once after 15 steps to refresh loop if still active
+        if st.session_state.telemetry_active:
+            st.rerun()
     st.divider()
 
     # ── Req 2: Initialize health_metrics with spec-compliant column names ──────
