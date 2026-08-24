@@ -203,10 +203,11 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### 📄 Export Dossier")
-
+    
     def generate_dossier():
-        content = f"=== MEDISCAN AI PATIENT DOSSIER ===\n\n"
-        content += f"PROFILE:\nAge: {profile.get('age')}\nSex: {profile.get('sex')}\nWeight: {profile.get('weight')} kg\nConditions: {profile.get('chronic_conditions')}\n\n"
+        prof = st.session_state.patient_profile
+        content = "=== MEDISCAN AI PATIENT DOSSIER ===\n\n"
+        content += f"PROFILE:\nAge: {prof.get('age')}\nSex: {prof.get('sex')}\nWeight: {prof.get('weight')} kg\nConditions: {prof.get('chronic_conditions')}\n\n"
         
         if not st.session_state.health_metrics.empty:
             content += f"BIOMETRIC TRAJECTORY (Last 6 Months):\n{st.session_state.health_metrics.to_string(index=False)}\n\n"
@@ -337,10 +338,19 @@ You must translate your entire response, including the differential diagnosis an
 
             st.markdown(assistant_reply)
 
+            # Feature 1: Emergency Webhook
+            critical_keywords = ["urgent care", "emergency", "immediate", "hospital", "chest pain", "stroke"]
+            if any(keyword in assistant_reply.lower() for keyword in critical_keywords):
+                st.error("🚨 **CRITICAL TRIAGE ESCALATION** 🚨\n\nHigh-risk symptoms detected. An automated webhook payload has been triggered to notify medical dispatch.")
+                try:
+                    requests.post("https://hook.us1.make.com/mock-emergency", json={"profile": profile, "alert": "critical_symptoms"}, timeout=2)
+                except:
+                    pass
+
+            # Feature 2: Synthesized Audio Playback
             lang_map = {"English": "en", "Hindi (हिन्दी)": "hi", "Marathi (मराठी)": "mr", "Bengali (বাংলা)": "bn", "Spanish (Español)": "es"}
             tts_lang = lang_map.get(st.session_state.app_language, "en")
             try:
-                # Clean markdown syntax before speaking
                 clean_text = assistant_reply.replace("*", "").replace("#", "")
                 tts = gTTS(text=clean_text, lang=tts_lang, slow=False)
                 audio_fp = io.BytesIO()
@@ -349,15 +359,6 @@ You must translate your entire response, including the differential diagnosis an
                 st.audio(audio_fp, format="audio/mp3")
             except Exception as e:
                 st.warning("Audio synthesis is temporarily unavailable.")
-
-            critical_keywords = ["urgent care", "emergency", "immediate", "hospital", "chest pain", "stroke"]
-            if any(keyword in assistant_reply.lower() for keyword in critical_keywords):
-                st.error("🚨 **CRITICAL TRIAGE ESCALATION** 🚨\n\nHigh-risk symptoms detected. An automated webhook payload has been triggered to notify medical dispatch.")
-                try:
-                    # Simulated n8n Webhook
-                    requests.post("https://hook.us1.make.com/mock-emergency", json={"profile": profile, "alert": "critical_symptoms"}, timeout=2)
-                except:
-                    pass
 
         st.session_state.chat_history.append(
             {"role": "assistant", "content": assistant_reply}
@@ -369,8 +370,8 @@ You must translate your entire response, including the differential diagnosis an
 
     st.divider()
     st.markdown("### 🏥 Nearby Care Centers (Pune)")
-    st.caption("Simulated local clinics based on current geographic coordinates.")
-    # Generate mock clinic coordinates around Pune (Lat: 18.5204, Lon: 73.8567)
+    st.caption("Simulated local clinics based on geographic coordinates.")
+    # Mock coordinates around Pune
     map_data = pd.DataFrame(
         np.random.randn(5, 2) / [60, 60] + [18.5204, 73.8567],
         columns=['lat', 'lon']
