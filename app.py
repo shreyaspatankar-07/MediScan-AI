@@ -8,7 +8,6 @@ import requests
 from gtts import gTTS
 import io
 import numpy as np
-import pydeck as pdk
 import time
 
 
@@ -371,8 +370,8 @@ You must translate your entire response, including the differential diagnosis an
 
 
     st.divider()
-    st.markdown("### 🌍 Hyper-Local Epidemic & Care Locator")
-    user_city = st.text_input("Enter your City to scan for nearby care and regional health advisories:", value="Pune")
+    st.markdown("### 🏥 Nearby Care Centers")
+    user_city = st.text_input("Enter your City to scan for nearby care centers:", value="Pune")
     
     # Free Geocoding via OpenStreetMap
     @st.cache_data(ttl=3600)
@@ -385,33 +384,12 @@ You must translate your entire response, including the differential diagnosis an
         
     lat, lon = get_coordinates(user_city)
     
-    # Generate Mock Data
-    clinics_df = pd.DataFrame(np.random.randn(8, 2) / [50, 50] + [lat, lon], columns=['lat', 'lon'])
-    outbreak_df = pd.DataFrame(np.random.randn(40, 2) / [80, 80] + [lat + 0.01, lon + 0.01], columns=['lat', 'lon'])
-    
-    # PyDeck Layers
-    clinic_layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=clinics_df,
-        get_position='[lon, lat]',
-        get_color='[0, 200, 0, 160]',
-        get_radius=400,
+    # Generate mock clinic coordinates around the resolved city
+    map_data = pd.DataFrame(
+        np.random.randn(5, 2) / [60, 60] + [lat, lon],
+        columns=['lat', 'lon']
     )
-    heatmap_layer = pdk.Layer(
-        "HeatmapLayer",
-        data=outbreak_df,
-        get_position='[lon, lat]',
-        get_weight=1,
-        radius_pixels=50,
-    )
-    
-    st.pydeck_chart(pdk.Deck(
-        map_style="mapbox://styles/mapbox/dark-v10",
-        initial_view_state=pdk.ViewState(latitude=lat, longitude=lon, zoom=11, pitch=45),
-        layers=[heatmap_layer, clinic_layer]
-    ))
-    
-    st.warning(f"⚠️ **Regional Health Advisory ({user_city}):** High density of viral fever symptoms reported in the northeast sector. Proceed to the green clinic markers if symptoms worsen.")
+    st.map(map_data, zoom=11, use_container_width=True)
 
     # ── Clear History ─────────────────────────────────────────────────────────
     if st.session_state.chat_history:

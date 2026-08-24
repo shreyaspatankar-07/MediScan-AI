@@ -5,4 +5,3 @@ pillow
 groq
 requests==2.31.0
 gTTS==2.5.1
-pydeck==0.9.1
