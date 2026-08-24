@@ -13,6 +13,9 @@ import time
 import seaborn as sns
 import matplotlib.pyplot as plt
 from datetime import datetime, date
+import json
+import re
+from typing import Any
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
@@ -29,7 +32,9 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Google GenAI Client ───────────────────────────────────────────────────────
+# ── Google Gemini Client (PRIMARY REASONING ENGINE) ─────────────────────────
+# Architecture: Gemini handles ALL text generation (triage, health coach) and
+# multimodal vision analysis. This is the core intelligence layer of MediScan AI.
 try:
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     _api_ready = True
@@ -37,7 +42,10 @@ except Exception:
     client = None
     _api_ready = False
 
-# ── Groq Client ───────────────────────────────────────────────────────────────
+# ── Groq Client (WHISPER STT ONLY) ────────────────────────────────────────────
+# Architecture: Groq is used EXCLUSIVELY for Whisper-based speech-to-text
+# transcription, leveraging its low-latency inference for real-time audio.
+# All reasoning and generation tasks are handled by Gemini above.
 try:
     groq_key = st.secrets.get("GROQ_API_KEY")
     groq_client = Groq(api_key=groq_key) if groq_key else None
@@ -57,6 +65,13 @@ OPERATIONAL CONSTRAINTS:
 3. Your tone must remain highly clinical, empathetic, and objective.
 4. You must format your response with clear markdown headings, bullet points for symptoms matched, an "Urgency Level" (Low / Moderate / High / Emergency), and a distinct "Recommended Next Steps" section.
 5. If severity/urgency signals suggest an emergency (e.g. chest pain, difficulty breathing, stroke symptoms, severe bleeding), clearly state this at the TOP of the response in bold.
+
+STRUCTURED OUTPUT (MANDATORY):
+After your full markdown response and BEFORE the CDSCO disclaimer, you MUST output exactly one JSON code block in this format:
+```json
+{"urgency_level": "<Low|Moderate|High|Emergency>", "top_conditions": ["condition_1", "condition_2", "condition_3"], "confidence": <0.0-1.0>}
+```
+This block is machine-parsed by the application. Do NOT omit it.
 
 MANDATORY DISCLAIMER:
 You must append the following exact text to the very bottom of every single response you generate, with no exceptions:
@@ -91,7 +106,8 @@ OPERATIONAL CONSTRAINTS:
 """
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def blank_health_metrics():
+def blank_health_metrics() -> pd.DataFrame:
+    """Return a default 6-month biometric DataFrame for a new patient."""
     return pd.DataFrame({
         "Month":              ["March", "April", "May", "June", "July", "August"],
         "Resting_HR":         [72, 74, 73, 76, 78, 80],
@@ -101,7 +117,8 @@ def blank_health_metrics():
     })
 
 
-def new_patient_record(age=25, sex="Male", weight=70.0, conditions=""):
+def new_patient_record(age: int = 25, sex: str = "Male", weight: float = 70.0, conditions: str = "") -> dict[str, Any]:
+    """Create a blank patient record dict with default profile and empty history lists."""
     return {
         "profile": {"age": age, "sex": sex, "weight_kg": weight, "chronic_conditions": conditions},
         "chat_history": [],
@@ -114,15 +131,16 @@ def new_patient_record(age=25, sex="Male", weight=70.0, conditions=""):
     }
 
 
-def fire_emergency_webhook(payload):
+def fire_emergency_webhook(payload: dict) -> None:
+    """POST an emergency alert payload to the configured webhook endpoint (fire-and-forget)."""
     try:
         requests.post(EMERGENCY_WEBHOOK_URL, json=payload, timeout=2)
     except Exception:
         pass
 
 
-def metric_flag(name, value):
-    """Returns (label, color) badge for a biometric value."""
+def metric_flag(name: str, value: float) -> tuple[str, str]:
+    """Return a (label, color) badge tuple for a biometric value against clinical thresholds."""
     thresholds = {
         "Resting_HR": (60, 100, "bpm"),
         "Systolic_BP": (90, 130, "mmHg"),
@@ -350,7 +368,7 @@ with st.sidebar:
         )
     if groq_client is None:
         st.warning(
-            "⚠️ **Groq API key not configured.**\n\nAdd `GROQ_API_KEY` to `.streamlit/secrets.toml`. Symptom triage & health coach will be unavailable until then.",
+            "⚠️ **Groq API key not configured.**\n\nAdd `GROQ_API_KEY` to `.streamlit/secrets.toml`. Voice input (Whisper STT) will be unavailable until then.",
             icon="🔑",
         )
 
@@ -444,7 +462,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📄 Export Dossier")
 
-    def generate_dossier(patient_name, record):
+    def generate_dossier(patient_name: str, record: dict) -> str:
+        """Build a plain-text patient dossier string for download/export."""
         prof = record["profile"]
         content = f"=== MEDISCAN AI PATIENT DOSSIER: {patient_name} ===\n"
         content += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
@@ -479,6 +498,22 @@ with st.sidebar:
         mime="text/plain", use_container_width=True,
     )
 
+    st.markdown("---")
+    with st.expander("⚙️ System Architecture"):
+        st.markdown("""
+```mermaid
+graph LR
+    A["👤 User"] --> B["Streamlit UI"]
+    B --> C["🧠 Gemini\nReasoning + Vision"]
+    B --> D["🎙️ Groq Whisper\nSpeech-to-Text"]
+    B --> E["🔊 gTTS\nText-to-Speech"]
+    C --> F["session_state"]
+    D --> F
+    F --> G["📄 PDF / Dossier\nExport"]
+    F --> H["🚨 Webhook\nEmergency Alerts"]
+```
+""")
+
 # ── Main Content ──────────────────────────────────────────────────────────────
 st.markdown("# 🩺 MediScan AI")
 st.markdown(f"*Your intelligent medical assistant — active profile: **{st.session_state.active_patient}***")
@@ -502,15 +537,17 @@ with tab1:
     )
 
     with st.expander("📋 Structured Intake (optional, improves accuracy)"):
-        ci1, ci2, ci3 = st.columns(3)
-        severity = ci1.slider("Severity (1 = mild, 10 = severe)", 1, 10, 5, key="intake_severity")
-        duration = ci2.selectbox("Duration", ["< 1 day", "1-3 days", "4-7 days", "1-4 weeks", "> 1 month"], key="intake_duration")
-        onset = ci3.selectbox("Onset", ["Sudden", "Gradual", "Not sure"], key="intake_onset")
-        body_areas = st.multiselect(
-            "Affected Body Area(s)",
-            ["Head", "Chest", "Abdomen", "Back", "Arms", "Legs", "Skin", "Throat", "Eyes", "Whole body", "Other"],
-            key="intake_areas",
-        )
+        with st.form("structured_intake_form", clear_on_submit=False):
+            ci1, ci2, ci3 = st.columns(3)
+            severity = ci1.slider("Severity (1 = mild, 10 = severe)", 1, 10, 5, key="intake_severity")
+            duration = ci2.selectbox("Duration", ["< 1 day", "1-3 days", "4-7 days", "1-4 weeks", "> 1 month"], key="intake_duration")
+            onset = ci3.selectbox("Onset", ["Sudden", "Gradual", "Not sure"], key="intake_onset")
+            body_areas = st.multiselect(
+                "Affected Body Area(s)",
+                ["Head", "Chest", "Abdomen", "Back", "Arms", "Legs", "Skin", "Throat", "Eyes", "Whole body", "Other"],
+                key="intake_areas",
+            )
+            st.form_submit_button("✅ Lock Intake", use_container_width=True)
 
     top_c1, top_c2 = st.columns([3, 1])
     with top_c2:
@@ -554,9 +591,12 @@ with tab1:
     )
 
     # ── Text Chat Input ───────────────────────────────────────────────────────
+    # DESIGN NOTE: st.chat_input cannot be placed inside an st.form (Streamlit API
+    # constraint). It fires on Enter-key and is the primary triage input — this is
+    # the intended interaction model per Streamlit's design.
     user_text = st.chat_input(
         "Describe your symptoms here (e.g. fever for 3 days, severe headache, nausea)…",
-        disabled=groq_client is None,
+        disabled=not _api_ready,
     )
 
     is_new_audio = False
@@ -611,25 +651,41 @@ You must translate your entire response, including the differential diagnosis an
                 st.markdown(final_symptom_text)
             active_record["chat_history"].append({"role": "user", "content": final_symptom_text})
 
-            messages_payload = [{"role": "system", "content": dynamic_system_instruction}]
+            # Build conversation context for Gemini (single-turn with history)
+            conversation_context = ""
             for msg in active_record["chat_history"]:
-                role = "assistant" if msg["role"] == "assistant" else "user"
-                messages_payload.append({"role": role, "content": msg["content"]})
+                role_label = "Patient" if msg["role"] == "user" else "MediScan AI"
+                conversation_context += f"{role_label}: {msg['content']}\n\n"
 
             assistant_reply = None
             with st.chat_message("assistant"):
                 with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
                     try:
-                        response = groq_client.chat.completions.create(
-                            model="openai/gpt-oss-20b", messages=messages_payload
+                        response = client.models.generate_content(
+                            model="gemini-2.0-flash",
+                            contents=conversation_context,
+                            config=types.GenerateContentConfig(system_instruction=dynamic_system_instruction),
                         )
-                        assistant_reply = response.choices[0].message.content
+                        assistant_reply = response.text
                     except Exception as exc:
-                        assistant_reply = f"⚠️ **Error communicating with Groq:** `{exc}`"
+                        assistant_reply = f"⚠️ **Error communicating with Gemini:** `{exc}`"
                 st.markdown(assistant_reply)
 
-                critical_keywords = ["urgent care", "emergency", "immediate", "hospital", "chest pain", "stroke"]
-                if any(keyword in assistant_reply.lower() for keyword in critical_keywords):
+                # ── Programmatic urgency detection via structured JSON output ──
+                is_critical = False
+                try:
+                    json_match = re.search(r'\{[^{}]*"urgency_level"[^{}]*\}', assistant_reply)
+                    if json_match:
+                        urgency_data = json.loads(json_match.group())
+                        if urgency_data.get("urgency_level") in ("High", "Emergency"):
+                            is_critical = True
+                except (json.JSONDecodeError, AttributeError):
+                    pass  # Fall back to keyword scan below
+                if not is_critical:
+                    # Fallback: keyword-based detection if JSON parsing failed
+                    critical_keywords = ["urgent care", "emergency", "immediate", "hospital", "chest pain", "stroke"]
+                    is_critical = any(kw in assistant_reply.lower() for kw in critical_keywords)
+                if is_critical:
                     st.error(
                         "🚨 **CRITICAL TRIAGE ESCALATION** 🚨\n\nHigh-risk symptoms detected. "
                         f"Notifying {st.session_state.emergency_contact.get('name') or 'emergency dispatch'}."
@@ -802,15 +858,30 @@ with tab2:
             for i, (fname, fobj) in enumerate(image_sources):
                 preview_cols[i % 4].image(fobj, caption=fname, use_container_width=True)
 
+        # DESIGN NOTE: Analyze button outside form — triggers analysis immediately on click.
         if st.button("🔍 Analyze Image(s)", key="analyze_report", type="primary", use_container_width=True):
             lang_vision_instruction = VISION_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your entire analysis and the CDSCO disclaimer in {st.session_state.app_language}."
+            # Build patient context for contextually-aware vision analysis
+            vision_context_parts: list[str] = []
+            prof = active_record["profile"]
+            vision_context_parts.append(
+                f"PATIENT CONTEXT: Age {prof.get('age', '?')}, Sex {prof.get('sex', '?')}, "
+                f"Weight {prof.get('weight_kg', '?')} kg, Conditions: {prof.get('chronic_conditions') or 'None'}"
+            )
+            recent_msgs = active_record["chat_history"][-3:]
+            if recent_msgs:
+                vision_context_parts.append("RECENT SYMPTOM TRIAGE CONTEXT:")
+                for msg in recent_msgs:
+                    role = "Patient" if msg["role"] == "user" else "AI"
+                    vision_context_parts.append(f"  {role}: {msg['content'][:200]}")
+            context_text = "\n".join(vision_context_parts)
             for fname, fobj in image_sources:
                 with st.spinner(f"Analyzing {fname} in {st.session_state.app_language}..."):
                     try:
                         pil_image = Image.open(fobj)
                         response = client.models.generate_content(
-                            model="gemini-3.6-flash",
-                            contents=["Please analyze this medical image.", pil_image],
+                            model="gemini-2.0-flash",
+                            contents=[context_text, "Please analyze this medical image.", pil_image],
                             config=types.GenerateContentConfig(system_instruction=lang_vision_instruction),
                         )
                         result_text = response.text
@@ -859,6 +930,31 @@ with tab3:
         "and generate AI-powered preventative wellness insights.",
         icon="🫀",
     )
+
+    # ── KPI Summary Row ──────────────────────────────────────────────────────────
+    kpi1, kpi2, kpi3 = st.columns(3)
+    _latest_risk = active_record["health_metrics"].iloc[-1]["Health_Risk_Score"]
+    _prev_risk = active_record["health_metrics"].iloc[-2]["Health_Risk_Score"]
+    kpi1.metric("📊 Overall Risk Trend", f"{int(_latest_risk)} / 100",
+                delta=int(_latest_risk - _prev_risk), delta_color="inverse")
+    if active_record["archived_conversations"]:
+        _last_ts = active_record["archived_conversations"][-1]["timestamp"]
+        _days = (date.today() - datetime.strptime(_last_ts, "%Y-%m-%d %H:%M").date()).days
+        kpi2.metric("📅 Days Since Last Check-in", f"{_days} day{'s' if _days != 1 else ''}")
+    elif active_record["chat_history"]:
+        kpi2.metric("📅 Days Since Last Check-in", "Active now")
+    else:
+        kpi2.metric("📅 Days Since Last Check-in", "No sessions yet")
+    _today_str = date.today().isoformat()
+    _due = sum(1 for r in st.session_state.reminders
+               if r["patient"] == st.session_state.active_patient and not r["done"] and r["date"] <= _today_str)
+    _total_pending = sum(1 for r in st.session_state.reminders
+                         if r["patient"] == st.session_state.active_patient and not r["done"])
+    kpi3.metric("📌 Active Reminders Due",
+                f"{_due} overdue" if _due else f"{_total_pending} pending",
+                delta=f"-{_due} overdue" if _due else None,
+                delta_color="inverse" if _due else "off")
+    st.divider()
 
     @st.fragment(run_every=2 if st.session_state.get("telemetry_active", False) else None)
     def render_telemetry():
@@ -1003,8 +1099,9 @@ with tab3:
     st.markdown("### 🤖 AI Preventative Health Coach")
     st.caption("Click below to pass your current biometric data to the AI for a personalised 3-point preventative wellness analysis.")
 
+    # DESIGN NOTE: Health Coach button outside form — fires Gemini immediately on click.
     if st.button("✨ Generate AI Health Insight", key="generate_coach", type="primary",
-                  use_container_width=True, disabled=groq_client is None):
+                  use_container_width=True, disabled=not _api_ready):
         csv_string = df.to_csv(index=False)
         coach_prompt = (
             f"Here is the patient's 6-month biometric data in CSV format:\n\n{csv_string}\n\n"
@@ -1013,16 +1110,14 @@ with tab3:
         with st.spinner(f"🧠 Health Coach is analysing your biometric trends in {st.session_state.app_language}..."):
             try:
                 lang_coach_instruction = HEALTH_COACH_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your 3-bullet-point wellness recommendation and the CDSCO disclaimer entirely in {st.session_state.app_language}."
-                response = groq_client.chat.completions.create(
-                    model="openai/gpt-oss-20b",
-                    messages=[
-                        {"role": "system", "content": lang_coach_instruction},
-                        {"role": "user", "content": coach_prompt},
-                    ],
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=coach_prompt,
+                    config=types.GenerateContentConfig(system_instruction=lang_coach_instruction),
                 )
-                active_record["coach_recommendation"] = response.choices[0].message.content
+                active_record["coach_recommendation"] = response.text
             except Exception as exc:
-                active_record["coach_recommendation"] = f"⚠️ **Groq API error:** `{exc}`"
+                active_record["coach_recommendation"] = f"⚠️ **Gemini API error:** `{exc}`"
 
     if active_record["coach_recommendation"]:
         st.markdown("---")
