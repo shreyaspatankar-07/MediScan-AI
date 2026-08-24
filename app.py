@@ -4,6 +4,18 @@ from PIL import Image
 from google import genai
 from google.genai import types
 from groq import Groq
+import cv2
+import numpy as np
+import mediapipe as mp
+import tempfile
+import os
+
+# Initialize MediaPipe Pose and map custom BGR code if needed
+mp_pose = mp.solutions.pose
+mp_drawing = mp.solutions.drawing_utils
+if not hasattr(cv2, 'RGB2BGR'):
+    cv2.RGB2BGR = cv2.COLOR_RGB2BGR
+
 
 # ── Page Configuration ───────────────────────────────────────────────────────
 st.set_page_config(
@@ -554,12 +566,12 @@ with tab3:
 with tab4:
     st.markdown("## 🏃 AI Kinetic Coach")
     st.info(
-        "Get custom, age-appropriate physical exercise routines and safety advice "
-        "tailored directly to your biometric profile and health status.",
+        "Get custom, age-appropriate physical exercise routines and perform posture biomechanics analysis.",
         icon="🏃",
     )
 
-    if st.button("Generate Age-Appropriate Routine", key="generate_kinetic_routine", type="primary", use_container_width=True):
+    # Requirement 2: Age-Based Recommendations
+    if st.button("Generate Daily Routine", key="generate_kinetic_routine", type="primary", use_container_width=True):
         profile = st.session_state.patient_profile
         age = profile.get("age")
         conditions = profile.get("chronic_conditions") or "None reported"
@@ -589,5 +601,86 @@ with tab4:
         if st.button("🗑️ Clear Routine", key="clear_kinetic_routine"):
             st.session_state.kinetic_routine = None
             st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 🎥 Posture Biomechanics Analysis")
+    
+    # Requirement 3: Video Uploader & Temp Storage
+    uploaded_video = st.file_uploader(
+        "Upload Exercise Video (Push-up/Squat)",
+        type=["mp4", "mov"],
+        help="Upload a video of your exercise to analyze your posture and form."
+    )
+
+    if uploaded_video is not None:
+        try:
+            # Save uploaded video to a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_video.name)[1]) as temp_in:
+                temp_in.write(uploaded_video.read())
+                temp_in_path = temp_in.name
+
+            # Requirement 4: OpenCV Frame Processing Loop
+            with st.spinner("Analyzing biomechanics frame-by-frame..."):
+                cap = cv2.VideoCapture(temp_in_path)
+                
+                # Get video properties
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
+                
+                # Create temporary output file
+                temp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+                temp_out_path = temp_out.name
+                temp_out.close() # Close so cv2.VideoWriter can open it
+                
+                # Setup video writer
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                writer = cv2.VideoWriter(temp_out_path, fourcc, fps, (width, height))
+                
+                while cap.isOpened():
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                        
+                    # Convert to RGB: image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    
+                    # Process with MediaPipe: results = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5).process(image)
+                    results = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5).process(image)
+                    
+                    # Convert back to BGR: image = cv2.cvtColor(image, cv2.RGB2BGR)
+                    image = cv2.cvtColor(image, cv2.RGB2BGR)
+                    
+                    # If results.pose_landmarks, draw the stickman: mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                    if results.pose_landmarks:
+                        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+                        
+                    # Write the frame to the output VideoWriter
+                    writer.write(image)
+                    
+                cap.release()
+                writer.release()
+
+                # Clean up input temp file
+                try:
+                    os.unlink(temp_in_path)
+                except Exception:
+                    pass
+
+            # Requirement 5: Display Result
+            st.success("Analysis complete!")
+            
+            # Read and display the output video
+            with open(temp_out_path, 'rb') as v_file:
+                st.video(v_file.read())
+                
+            # Clean up output temp file after displaying
+            try:
+                os.unlink(temp_out_path)
+            except Exception:
+                pass
+                
+        except Exception as exc:
+            st.error(f"⚠️ **Error during posture analysis:** `{exc}`")
 
 
