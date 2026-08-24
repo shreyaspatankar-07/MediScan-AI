@@ -4,17 +4,9 @@ from PIL import Image
 from google import genai
 from google.genai import types
 from groq import Groq
-import cv2
 import numpy as np
-import mediapipe as mp
 import tempfile
 import os
-
-# Initialize MediaPipe Pose and map custom BGR code if needed
-mp_pose = mp.solutions.pose
-mp_drawing = mp.solutions.drawing_utils
-if not hasattr(cv2, 'RGB2BGR'):
-    cv2.RGB2BGR = cv2.COLOR_RGB2BGR
 
 
 # ── Page Configuration ───────────────────────────────────────────────────────
@@ -104,6 +96,10 @@ if "coach_recommendation" not in st.session_state:
 
 if "kinetic_routine" not in st.session_state:
     st.session_state.kinetic_routine = None
+
+if "kinetic_vision_result" not in st.session_state:
+    st.session_state.kinetic_vision_result = None
+
 
 
 if "health_metrics" not in st.session_state:
@@ -603,84 +599,42 @@ with tab4:
             st.rerun()
 
     st.markdown("---")
-    st.markdown("### 🎥 Posture Biomechanics Analysis")
+    st.markdown("### 📷 Posture Biomechanics Analysis (Gemini Vision)")
     
-    # Requirement 3: Video Uploader & Temp Storage
-    uploaded_video = st.file_uploader(
-        "Upload Exercise Video (Push-up/Squat)",
-        type=["mp4", "mov"],
-        help="Upload a video of your exercise to analyze your posture and form."
+    # Requirement 3: File uploader (accepting jpg, png)
+    uploaded_image = st.file_uploader(
+        "Upload Exercise Image (Push-up/Squat/etc.)",
+        type=["jpg", "png"],
+        help="Upload a photo of you performing an exercise to analyze posture and form."
     )
 
-    if uploaded_video is not None:
-        try:
-            # Save uploaded video to a temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_video.name)[1]) as temp_in:
-                temp_in.write(uploaded_video.read())
-                temp_in_path = temp_in.name
+    if uploaded_image is not None:
+        st.image(uploaded_image, caption="Uploaded Exercise Photo", use_container_width=True)
 
-            # Requirement 4: OpenCV Frame Processing Loop
-            with st.spinner("Analyzing biomechanics frame-by-frame..."):
-                cap = cv2.VideoCapture(temp_in_path)
-                
-                # Get video properties
-                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
-                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
-                
-                # Create temporary output file
-                temp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-                temp_out_path = temp_out.name
-                temp_out.close() # Close so cv2.VideoWriter can open it
-                
-                # Setup video writer
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                writer = cv2.VideoWriter(temp_out_path, fourcc, fps, (width, height))
-                
-                while cap.isOpened():
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                        
-                    # Convert to RGB: image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    
-                    # Process with MediaPipe: results = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5).process(image)
-                    results = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5).process(image)
-                    
-                    # Convert back to BGR: image = cv2.cvtColor(image, cv2.RGB2BGR)
-                    image = cv2.cvtColor(image, cv2.RGB2BGR)
-                    
-                    # If results.pose_landmarks, draw the stickman: mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-                    if results.pose_landmarks:
-                        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-                        
-                    # Write the frame to the output VideoWriter
-                    writer.write(image)
-                    
-                cap.release()
-                writer.release()
-
-                # Clean up input temp file
-                try:
-                    os.unlink(temp_in_path)
-                except Exception:
-                    pass
-
-            # Requirement 5: Display Result
-            st.success("Analysis complete!")
-            
-            # Read and display the output video
-            with open(temp_out_path, 'rb') as v_file:
-                st.video(v_file.read())
-                
-            # Clean up output temp file after displaying
+        if st.button("🔍 Analyze Posture Biomechanics", key="analyze_posture_vision", type="primary", use_container_width=True):
             try:
-                os.unlink(temp_out_path)
-            except Exception:
-                pass
-                
-        except Exception as exc:
-            st.error(f"⚠️ **Error during posture analysis:** `{exc}`")
+                # Use PIL.Image.open to read the image into memory
+                pil_image = Image.open(uploaded_image)
+
+                prompt = "You are an expert biomechanics coach. Analyze this image of a user performing an exercise. Identify the exercise, evaluate their posture (e.g., back alignment, joint angles), and provide 3 specific corrections to improve their form and prevent injury."
+
+                # Wrap the execution in st.spinner
+                with st.spinner("Analyzing biomechanics via Gemini Vision..."):
+                    response = client.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=[prompt, pil_image],
+                    )
+                    st.session_state.kinetic_vision_result = response.text
+            except Exception as exc:
+                st.session_state.kinetic_vision_result = f"⚠️ **Gemini Vision error:** `{exc}`"
+
+    if st.session_state.kinetic_vision_result:
+        st.markdown("---")
+        st.markdown("#### 🏃 Biomechanics Coach Response")
+        st.markdown(st.session_state.kinetic_vision_result)
+        if st.button("🗑️ Clear Analysis", key="clear_kinetic_vision"):
+            st.session_state.kinetic_vision_result = None
+            st.rerun()
+
 
 
