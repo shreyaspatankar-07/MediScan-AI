@@ -288,7 +288,7 @@ You must translate your entire response, including the differential diagnosis an
             # Build a messages_payload list for the Groq chat completion.
             messages_payload = [{"role": "system", "content": dynamic_system_instruction}]
             for msg in st.session_state.chat_history:
-                # Groq uses assistant instead of model
+                # Ensure role names map correctly to Groq's expected roles
                 role = "assistant" if msg["role"] == "assistant" else "user"
                 messages_payload.append({"role": role, "content": msg["content"]})
 
