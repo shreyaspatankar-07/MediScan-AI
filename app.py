@@ -90,6 +90,10 @@ if "report_result" not in st.session_state:
 if "coach_recommendation" not in st.session_state:
     st.session_state.coach_recommendation = None
 
+if "kinetic_routine" not in st.session_state:
+    st.session_state.kinetic_routine = None
+
+
 if "health_metrics" not in st.session_state:
     st.session_state.health_metrics = pd.DataFrame()
 
@@ -199,10 +203,11 @@ st.markdown("# 🩺 MediScan AI")
 st.markdown("*Your intelligent medical assistant powered by Google Gemini*")
 st.markdown("---")
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "🔬 Symptom Analyzer",
     "📄 Medical Report Interpreter",
     "📊 Health Dashboard",
+    "🏃 AI Kinetic Coach",
 ])
 
 # ── Tab 1: Symptom Analyzer ───────────────────────────────────────────────────
@@ -544,4 +549,45 @@ with tab3:
         if st.button("🗑️ Clear Recommendations", key="clear_coach"):
             st.session_state.coach_recommendation = None
             st.rerun()
+
+# ── Tab 4: AI Kinetic Coach ───────────────────────────────────────────────────
+with tab4:
+    st.markdown("## 🏃 AI Kinetic Coach")
+    st.info(
+        "Get custom, age-appropriate physical exercise routines and safety advice "
+        "tailored directly to your biometric profile and health status.",
+        icon="🏃",
+    )
+
+    if st.button("Generate Age-Appropriate Routine", key="generate_kinetic_routine", type="primary", use_container_width=True):
+        profile = st.session_state.patient_profile
+        age = profile.get("age")
+        conditions = profile.get("chronic_conditions") or "None reported"
+
+        if not age:
+            st.warning("⚠️ Please fill out the Patient Profile (specifically Age) in the sidebar to generate a suitable routine.")
+        else:
+            with st.spinner("🧠 Generating your custom exercise routine..."):
+                try:
+                    prompt = f"The patient is {age} years old with the following conditions: {conditions}. Recommend 3 daily exercises suitable for their demographic. Format with emojis and clear instructions."
+                    
+                    response = groq_client.chat.completions.create(
+                        model="openai/gpt-oss-20b",
+                        messages=[
+                            {"role": "system", "content": "You are the MediScan AI Kinetic Coach, an expert fitness trainer and physical therapist. Provide highly safe, targeted, and age-appropriate physical exercise plans based on the patient's conditions. Always end your response with the CDSCO compliance disclaimer."},
+                            {"role": "user", "content": prompt}
+                        ]
+                    )
+                    st.session_state.kinetic_routine = response.choices[0].message.content
+                except Exception as exc:
+                    st.session_state.kinetic_routine = f"⚠️ **Groq API error:** `{exc}`"
+
+    if st.session_state.kinetic_routine:
+        st.markdown("---")
+        st.markdown("#### 🏃 Recommended Exercise Routine")
+        st.markdown(st.session_state.kinetic_routine)
+        if st.button("🗑️ Clear Routine", key="clear_kinetic_routine"):
+            st.session_state.kinetic_routine = None
+            st.rerun()
+
 
