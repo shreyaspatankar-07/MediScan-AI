@@ -7,6 +7,8 @@ from groq import Groq
 import numpy as np
 import tempfile
 import os
+import cv2
+from ultralytics import YOLO
 
 
 # ── Page Configuration ───────────────────────────────────────────────────────
@@ -617,6 +619,31 @@ with tab4:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
                     temp_video.write(uploaded_video.read())
                     temp_video_path = temp_video.name
+
+                # YOLO Pose estimation loop before Gemini analysis
+                st.markdown("### 🏃‍♂️ Virtual Biomechanics Tracker")
+                frame_window = st.empty() # Placeholder for live video playback
+
+                with st.spinner("Initializing YOLO Pose Estimation..."):
+                    model = YOLO("yolov8n-pose.pt") # Automatically downloads the lightweight model
+                    cap = cv2.VideoCapture(temp_video_path)
+                    
+                    while cap.isOpened():
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                            
+                        # Run pose estimation
+                        results = model(frame, verbose=False)
+                        
+                        # Automatically draws the stickman skeleton
+                        annotated_frame = results[0].plot() 
+                        
+                        # Convert BGR to RGB for Streamlit and render
+                        rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+                        frame_window.image(rgb_frame, channels="RGB")
+                        
+                    cap.release()
 
                 # Requirement 4: Upload and Analyze with Gemini
                 with st.spinner("Uploading and analyzing video biomechanics via Gemini..."):

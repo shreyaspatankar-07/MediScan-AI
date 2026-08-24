@@ -3,3 +3,5 @@ google-genai
 pandas
 pillow
 groq
+opencv-python-headless
+ultralytics
