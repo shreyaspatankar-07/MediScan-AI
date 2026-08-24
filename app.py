@@ -270,7 +270,7 @@ You must translate your entire response, including the differential diagnosis an
                 try:
                     transcription = groq_client.audio.transcriptions.create(
                         file=("audio.wav", audio_value.read()),
-                        model="whisper-large-v3"
+                        model="whisper-large-v3-turbo"
                     )
                     if final_symptom_text:
                         final_symptom_text += f"\nVoice note: {transcription.text}"
@@ -297,7 +297,7 @@ You must translate your entire response, including the differential diagnosis an
                 with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
                     try:
                         response = groq_client.chat.completions.create(
-                            model="llama-3.1-8b-instant",
+                            model="openai/gpt-oss-20b",
                             messages=messages_payload
                         )
                         assistant_reply = response.choices[0].message.content
@@ -524,7 +524,7 @@ with tab3:
             try:
                 lang_coach_instruction = HEALTH_COACH_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your 3-bullet-point wellness recommendation and the CDSCO disclaimer entirely in {st.session_state.app_language}."
                 response = groq_client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model="openai/gpt-oss-20b",
                     messages=[
                         {"role": "system", "content": lang_coach_instruction},
                         {"role": "user", "content": coach_prompt}
