@@ -623,7 +623,7 @@ with tab4:
                     uploaded_video_gemini = client.files.upload(file=temp_video_path)
 
                     response = client.models.generate_content(
-                        model="gemini-2.0-flash",
+                        model="gemini-3.6-flash",
                         contents=["You are an expert biomechanics coach. Watch this video of a user performing an exercise. Identify the exercise, evaluate their posture frame-by-frame (e.g., back alignment, depth, joint angles), and provide 3 specific corrections to improve their form.", uploaded_video_gemini]
                     )
                     st.session_state.kinetic_vision_result = response.text
