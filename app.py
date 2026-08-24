@@ -539,12 +539,24 @@ with tab3:
             if not st.session_state.telemetry_active:
                 break
                 
+            current_hr = np.random.randint(60, 110)
+            current_bp_systolic = np.random.randint(110, 140)
+            current_bp_diastolic = np.random.randint(70, 90)
+            current_ecg = "Normal Sinus Rhythm" if np.random.rand() > 0.1 else "Irregular Rhythm (AFib Alert)"
+            current_afib = "No AFib Detected" if np.random.rand() > 0.1 else "Possible AFib Detected"
             current_spo2 = np.random.randint(88, 100)
+            current_resp_rate = np.random.randint(12, 20)
+            current_sleep = "7h 12m (Deep: 1.5h, REM: 2.1h)"
             current_hrv = np.random.randint(20, 80)
+            current_temp_dev = f"{np.random.uniform(-0.5, 0.8):+.1f} °C"
+            current_fall = "No Fall Detected" if np.random.rand() > 0.05 else "⚠️ HARD FALL DETECTED!"
+            current_stress = np.random.randint(10, 90)
+            current_calories = np.random.randint(100, 800)
             
             # Record history
             st.session_state.telemetry_history.append({
                 "Reading": len(st.session_state.telemetry_history) + 1,
+                "Heart_Rate": current_hr,
                 "SpO2": current_spo2,
                 "HRV": current_hrv
             })
@@ -554,9 +566,29 @@ with tab3:
             hist_df = pd.DataFrame(st.session_state.telemetry_history)
             
             with telemetry_placeholder.container():
-                tc1, tc2 = st.columns(2)
-                tc1.metric("🩸 Live SpO2 (%)", f"{current_spo2}%", delta=current_spo2-95, delta_color="normal")
-                tc2.metric("🫀 Live HRV (ms)", f"{current_hrv} ms", delta=current_hrv-50, delta_color="normal")
+                st.markdown("#### 💓 Cardiovascular Metrics")
+                cc1, cc2, cc3, cc4 = st.columns(4)
+                cc1.metric("Pulse (HR)", f"{current_hr} bpm", delta=current_hr - 72)
+                cc2.metric("Blood Pressure (BP)", f"{current_bp_systolic}/{current_bp_diastolic} mmHg")
+                cc3.metric("ECG / EKG", current_ecg)
+                cc4.metric("AFib Check", current_afib)
+                
+                st.markdown("#### 🫁 Respiratory & Blood Metrics")
+                cr1, cr2 = st.columns(2)
+                cr1.metric("Blood Oxygen (SpO2)", f"{current_spo2}%", delta=current_spo2 - 95)
+                cr2.metric("Respiratory Rate", f"{current_resp_rate} breaths/min", delta=current_resp_rate - 14)
+                
+                st.markdown("#### 🛌 Sleep & Recovery")
+                cs1, cs2, cs3 = st.columns(3)
+                cs1.metric("Heart Rate Variability (HRV)", f"{current_hrv} ms", delta=current_hrv - 50)
+                cs2.metric("Skin Temp Deviation", current_temp_dev)
+                cs3.metric("Sleep Quality Status", current_sleep)
+                
+                st.markdown("#### ⚠️ Specialized Safety & Exertion")
+                cd1, cd2, cd3 = st.columns(3)
+                cd1.metric("Fall/Seizure Guard", current_fall)
+                cd2.metric("Stress Level Score", f"{current_stress} / 100")
+                cd3.metric("Active Calories", f"{current_calories} kcal")
                 
                 if current_spo2 < 92:
                     st.error("🚨 **CRITICAL: SpO2 DROP DETECTED** 🚨\n\nBlood oxygen levels have fallen below 92%. Triggering emergency webhook.")
@@ -566,12 +598,13 @@ with tab3:
                         pass
                 
                 # Plot live trends using Seaborn & Matplotlib
-                fig, ax = plt.subplots(figsize=(6, 2.5))
+                fig, ax = plt.subplots(figsize=(6, 3))
+                sns.lineplot(data=hist_df, x="Reading", y="Heart_Rate", label="Pulse (bpm)", ax=ax, color="purple", marker="^")
                 sns.lineplot(data=hist_df, x="Reading", y="SpO2", label="SpO2 (%)", ax=ax, color="red", marker="o")
                 ax2 = ax.twinx()
                 sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax=ax2, color="blue", marker="s")
-                ax.set_title("Live Telemetry Trends (Seaborn)", fontsize=10)
-                ax.set_ylabel("SpO2 (%)", color="red")
+                ax.set_title("Live Pulse, SpO2, and HRV Telemetry Trends (Seaborn)", fontsize=10)
+                ax.set_ylabel("Pulse / SpO2")
                 ax2.set_ylabel("HRV (ms)", color="blue")
                 fig.tight_layout()
                 st.pyplot(fig)
