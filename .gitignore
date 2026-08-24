@@ -1,0 +1,17 @@
+# Streamlit secrets - never commit credentials
+.streamlit/secrets.toml
+
+# Alternatively, ignore the entire .streamlit directory
+.streamlit/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
