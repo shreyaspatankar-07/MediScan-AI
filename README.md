@@ -8,7 +8,7 @@
           AI  ·  Triage  ·  Dashboard  ·  India
 ```
 
-> **Intelligent multimodal clinical triage assistant — powered by Gemini 2.0 Flash**
+> **Intelligent multimodal clinical triage assistant — powered by Gemini 3.6 Flash**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.40%2B-FF4B4B?logo=streamlit)](https://streamlit.io)
@@ -37,9 +37,9 @@ The system targets triage *assistance*, not diagnosis replacement. Every AI resp
 
 | Tab / Feature | What it does | Core Technologies |
 |---|---|---|
-| 🔬 **Symptom Analyzer** | Conversational triage with structured intake (severity, duration, onset, body areas); ranked differential diagnosis | `gemini-2.0-flash` · Groq `whisper-large-v3-turbo` (STT) · `gTTS` (TTS) |
-| 📄 **Medical Report Interpreter** | Upload / camera-capture lab panels or symptom images; OCR-style extraction with biomarker table + second opinion | `gemini-2.0-flash` (multimodal vision) · Groq `openai/gpt-oss-20b` (second opinion) |
-| 📊 **Health Dashboard** | 6-month biometric editor, risk score chart, live simulated smartwatch telemetry, AI preventative health coach & visual health references | `gemini-2.0-flash` · `pollinations.ai` (Flux model) · `seaborn` / `matplotlib` · `@st.fragment(run_every=2)` |
+| 🔬 **Symptom Analyzer** | Conversational triage with structured intake (severity, duration, onset, body areas); ranked differential diagnosis | `gemini-3.6-flash` · Groq `whisper-large-v3-turbo` (STT) · `gTTS` (TTS) |
+| 📄 **Medical Report Interpreter** | Upload / camera-capture lab panels or symptom images; OCR-style extraction with biomarker table + second opinion | `gemini-3.6-flash` (multimodal vision) · Groq `openai/gpt-oss-20b` (second opinion) |
+| 📊 **Health Dashboard** | 6-month biometric editor, risk score chart, live simulated smartwatch telemetry, AI preventative health coach & visual health references | `gemini-3.6-flash` · `pollinations.ai` (Flux model) · `seaborn` / `matplotlib` · `@st.fragment(run_every=2)` |
 | 🗓️ **Reminders & Care Plan** | Date-stamped care reminders per patient with overdue status, toggle, and delete | Pure `st.session_state` |
 | **Sidebar — Patient Profiles** | Multi-patient records, profile editor (age, sex, weight), weight unit toggle (kg/lb) | `st.session_state` dict keyed by patient name |
 | **Sidebar — Emergency Contact** | SOS alert trigger → `fire_emergency_webhook()` → mock webhook POST | `requests` |
@@ -60,14 +60,14 @@ graph TD
     UI --> Tab3["📊 Health Dashboard"]
     UI --> Tab4["🗓️ Reminders"]
 
-    Tab1 --> GeminiText["🧠 Gemini 2.0 Flash\n(Triage reasoning)"]
+    Tab1 --> GeminiText["🧠 Gemini 3.6 Flash\n(Triage reasoning)"]
     Tab1 --> WhisperSTT["🎙️ Groq Whisper\nwhisper-large-v3-turbo\n(Speech-to-Text)"]
     Tab1 --> GTTS["🔊 gTTS\n(Text-to-Speech)"]
 
-    Tab2 --> GeminiVision["🧠 Gemini 2.0 Flash\n(Multimodal vision)"]
+    Tab2 --> GeminiVision["🧠 Gemini 3.6 Flash\n(Multimodal vision)"]
     Tab2 --> GroqLLM["🤖 Groq openai/gpt-oss-20b\n(Second opinion synthesis)"]
 
-    Tab3 --> GeminiCoach["🧠 Gemini 2.0 Flash\n(Health Coach)"]
+    Tab3 --> GeminiCoach["🧠 Gemini 3.6 Flash\n(Health Coach)"]
     Tab3 --> Pollinations["🎨 Pollinations AI\n(Visual Health Reference - Flux)"]
     Tab3 --> Telemetry["📡 @st.fragment\nSimulated smartwatch stream"]
 
@@ -89,7 +89,7 @@ graph TD
 | Library / Service | Version / API | Purpose |
 |---|---|---|
 | `streamlit` | latest | UI framework, session state, fragments |
-| `google-genai` | latest | Gemini 2.0 Flash — triage, vision, health coach |
+| `google-genai` | latest | Gemini 3.6 Flash — triage, vision, health coach |
 | `groq` | latest | Whisper STT + second-opinion LLM |
 | `pollinations.ai` | API (Free) | No-key image generation (Flux model) for visual health references |
 | `gTTS` | 2.5.1 | Text-to-speech (multilingual) |

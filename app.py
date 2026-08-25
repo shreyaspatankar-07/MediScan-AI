@@ -924,7 +924,7 @@ You must translate your entire response, including the differential diagnosis an
                     with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
                         try:
                             response = client.models.generate_content(
-                                model="gemini-2.0-flash",
+                                model="gemini-3.6-flash",
                                 contents=conversation_context,
                                 config=types.GenerateContentConfig(system_instruction=dynamic_system_instruction),
                             )
@@ -1162,7 +1162,7 @@ with tab2:
                     try:
                         pil_image = Image.open(fobj)
                         response = client.models.generate_content(
-                            model="gemini-2.0-flash",
+                            model="gemini-3.6-flash",
                             contents=[context_text, "Please analyze this medical image.", pil_image],
                             config=types.GenerateContentConfig(system_instruction=lang_vision_instruction),
                         )
@@ -1458,7 +1458,7 @@ with tab3:
             try:
                 lang_coach_instruction = HEALTH_COACH_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your 3-bullet-point wellness recommendation and the CDSCO disclaimer entirely in {st.session_state.app_language}."
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-3.6-flash",
                     contents=coach_prompt,
                     config=types.GenerateContentConfig(system_instruction=lang_coach_instruction),
                 )

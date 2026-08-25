@@ -49,7 +49,7 @@ graph TD
     end
 
     subgraph AI["AI / Reasoning Layer"]
-        Gemini["Google Gemini 2.0 Flash\n(google-genai SDK)\n• Triage reasoning\n• Vision OCR analysis\n• Preventative health coaching"]
+        Gemini["Google Gemini 3.6 Flash\n(google-genai SDK)\n• Triage reasoning\n• Vision OCR analysis\n• Preventative health coaching"]
         WhisperSTT["Groq Whisper\nwhisper-large-v3-turbo\n(Speech-to-Text only)"]
         GroqLLM["Groq openai/gpt-oss-20b\n(Second-opinion synthesis only)"]
         Pollinations["Pollinations AI\n(Flux model)\n• Visual health references"]
@@ -133,7 +133,7 @@ User submits text / records audio
         │                  (shows "⚡ Loaded from session cache" caption)
         │
         └── Cache miss? → client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-3.6-flash",
                     contents=conversation_context,
                     config=GenerateContentConfig(system_instruction=dynamic_system_instruction)
                 )
@@ -166,7 +166,7 @@ User opens camera or uploads file(s)
         ├── For each image source:
         │       pil_image = Image.open(fobj)
         │       → client.models.generate_content(
-        │             model="gemini-2.0-flash",
+        │             model="gemini-3.6-flash",
         │             contents=[context_text, "Please analyze this medical image.", pil_image],
         │             config=GenerateContentConfig(system_instruction=lang_vision_instruction)
         │         )
@@ -253,7 +253,7 @@ User clicks "🟢 Start Live Monitor (Simulated Demo)"
 
 ### 4.1 Google Gemini (`google-genai` SDK)
 
-**Model used:** `gemini-2.0-flash` (all three use-cases)
+**Model used:** `gemini-3.6-flash` (all three use-cases)
 
 **Initialization:**
 ```python
