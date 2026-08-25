@@ -371,17 +371,22 @@ def render_empty_state(icon: str, title: str, subtitle: str):
     """, unsafe_allow_html=True)
 
 
-def generate_pollinations_image(prompt: str, width: int = 800, height: int = 480) -> str:
-    """Build and return a Pollinations AI image URL for the given prompt.
+def generate_pollinations_image(prompt: str, width: int = 1024, height: int = 576, seed: int = 42) -> str:
+    """Build and return a high-fidelity Pollinations AI image URL for the given prompt.
 
-    Uses the free, no-auth Pollinations image endpoint with the Flux model.
-    The seed is fixed so repeated renders return the same image (browser-cached).
+    Uses the free Pollinations endpoint with the Flux model, combining concrete physical object prompts
+    with explicit 3D/vector style modifiers and negative parameters (&nologo=true) to ensure crisp renders.
     """
     import urllib.parse
-    encoded_prompt = urllib.parse.quote(prompt)
+    style_modifiers = (
+        "3d medical render, vector infographic style, high resolution, 8k, minimalist design, "
+        "professional digital illustration, sharp focus, studio lighting, crisp details, no blur, no text, no distortion"
+    )
+    full_prompt = f"{prompt}, {style_modifiers}"
+    encoded_prompt = urllib.parse.quote(full_prompt)
     return (
         f"https://image.pollinations.ai/prompt/{encoded_prompt}"
-        f"?width={width}&height={height}&model=flux&nologo=true&seed=42"
+        f"?width={width}&height={height}&model=flux&nologo=true&seed={seed}"
     )
 
 
@@ -1483,39 +1488,41 @@ with tab3:
             )
             _lv = active_record["health_metrics"].iloc[-1]
             if _lv["Health_Risk_Score"] >= 60:
-                _img_topic = (
-                    "human heart anatomy cardiovascular system health awareness "
-                    "cross-section diagram, clean medical illustration"
+                _img_prompt = (
+                    "detailed 3d anatomical model of a human heart with glowing blood vessels on a clean medical laboratory display desk"
                 )
                 _img_label = "Cardiovascular Health"
+                _img_seed = 101
             elif _lv["Fasting_Glucose"] > 100:
-                _img_topic = (
-                    "blood glucose monitoring diabetes prevention lifestyle wellness, "
-                    "medical education illustration, clean white background"
+                _img_prompt = (
+                    "modern digital glucometer blood sugar tester next to a fresh red apple and measuring tape on a bright white clinical tabletop"
                 )
                 _img_label = "Blood Glucose Regulation"
+                _img_seed = 202
             elif _lv["Systolic_BP"] > 130:
-                _img_topic = (
-                    "blood pressure hypertension prevention arterial health, "
-                    "clean educational medical poster illustration"
+                _img_prompt = (
+                    "modern electronic digital blood pressure monitor with cuff on a clean clinical white table"
                 )
                 _img_label = "Blood Pressure & Arterial Health"
+                _img_seed = 303
             elif _lv["Resting_HR"] > 100:
-                _img_topic = (
-                    "human heart rate pulse fitness cardio health, "
-                    "medical diagram illustration, clean minimal design"
+                _img_prompt = (
+                    "sleek smartwatch on wrist displaying a heart rate pulse graph screen, fitness tracking concept"
                 )
                 _img_label = "Heart Rate & Fitness"
+                _img_seed = 404
             else:
-                _img_topic = (
-                    "healthy lifestyle wellness preventative healthcare balanced diet exercise, "
-                    "vibrant clean medical illustration"
+                _img_prompt = (
+                    "vibrant healthy lifestyle layout with fresh vegetables, running shoes, water bottle, and heart health symbol on a clean surface"
                 )
                 _img_label = "Preventative Wellness"
+                _img_seed = 505
 
             _pollinations_url = generate_pollinations_image(
-                f"professional clean medical illustration of {_img_topic}, "
-                "white background, educational, no text, high quality"
+                _img_prompt,
+                width=1024,
+                height=576,
+                seed=_img_seed,
             )
             st.image(
                 _pollinations_url,
