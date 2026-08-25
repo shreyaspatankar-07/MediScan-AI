@@ -1131,7 +1131,7 @@ with tab3:
         sns.lineplot(data=hist_df, x="Reading", y="Heart_Rate", label="Pulse (bpm)", ax=ax, color="#8884d8", marker="o", linewidth=2)
         sns.lineplot(data=hist_df, x="Reading", y="SpO2", label="SpO2 (%)", ax=ax, color="#ef4444", marker="s", linewidth=2)
         ax2 = ax.twinx()
-        sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax2=ax2, color="blue", marker="s")
+        sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax=ax2, color="#3b82f6", marker="s")
         ax.set_title("Simulated Live Pulse, SpO2, and HRV Telemetry (Demo Stream)", fontsize=11, fontweight="bold")
         ax.set_ylabel("Pulse (bpm) / SpO2 (%)", fontsize=9)
         ax2.set_ylabel("HRV (ms)", color="#3b82f6", fontsize=9)
