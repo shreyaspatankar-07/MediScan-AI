@@ -50,17 +50,17 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    /* Main App Background — Cliniva Light Slate/Lavender Tint */
+    /* Cliniva Main App Periwinkle Tinted Background */
     .stApp {
-        background-color: #f4f6fb !important;
-        color: #1e293b !important;
+        background: linear-gradient(135deg, #f0f0fa 0%, #e9e8f7 100%) !important;
+        color: #1e1b4b !important;
     }
 
-    /* Sidebar Styling — Crisp White Cliniva Navigation */
+    /* Sidebar Styling — Crisp Periwinkle White Cliniva Navigation */
     [data-testid="stSidebar"] {
-        background-color: #ffffff !important;
-        border-right: 1px solid #e2e8f0 !important;
-        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.03) !important;
+        background-color: #f7f6fd !important;
+        border-right: 1px solid #e2e0f5 !important;
+        box-shadow: 3px 0 15px rgba(124, 77, 255, 0.04) !important;
     }
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p, 
     [data-testid="stSidebar"] label,
@@ -69,142 +69,134 @@ st.markdown("""
         font-weight: 500;
     }
 
-    /* Top Banner / Welcome Header Style */
+    /* Cliniva Top Banner / Alert Cards */
     div.stAlert {
-        background: linear-gradient(135deg, #e0e7ff 0%, #dbeafe 100%) !important;
-        border: 1px solid #c7d2fe !important;
-        border-radius: 16px !important;
+        background: linear-gradient(135deg, #e0e0fd 0%, #d8d8fa 100%) !important;
+        border: 1px solid #c7c7f8 !important;
+        border-radius: 18px !important;
         color: #1e1b4b !important;
-        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.08) !important;
+        box-shadow: 0 4px 18px rgba(124, 77, 255, 0.08) !important;
     }
 
-    /* Cliniva Metric Cards (White Container with Vibrant Accents) */
+    /* Cliniva Metric Cards (Periwinkle White Containers) */
     [data-testid="stMetric"] {
-        background-color: #ffffff !important;
-        border: 1px solid #f1f5f9 !important;
-        border-radius: 16px !important;
-        padding: 18px 22px !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04) !important;
+        background: #ffffff !important;
+        border: 1px solid #e8e7f5 !important;
+        border-radius: 18px !important;
+        padding: 20px 24px !important;
+        box-shadow: 0 4px 22px rgba(124, 77, 255, 0.05) !important;
         transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
     [data-testid="stMetric"]:hover {
         transform: translateY(-3px) !important;
-        box-shadow: 0 8px 25px rgba(99, 102, 241, 0.12) !important;
-        border-color: #c7d2fe !important;
+        box-shadow: 0 10px 28px rgba(124, 77, 255, 0.15) !important;
+        border-color: #7c4dff !important;
     }
     [data-testid="stMetricValue"] {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         font-weight: 800 !important;
-        font-size: 1.9rem !important;
-        color: #4f46e5 !important;
+        font-size: 2.1rem !important;
+        color: #635bff !important;
     }
     [data-testid="stMetricLabel"] {
         color: #64748b !important;
         font-weight: 600 !important;
-        font-size: 0.88rem !important;
-    }
-
-    /* Buttons — Cliniva Primary Indigo & Secondary Light */
-    .stButton button, div.stButton > button, div.stLinkButton > a {
-        border-radius: 10px !important;
-        font-weight: 600 !important;
         font-size: 0.9rem !important;
-        padding: 0.5rem 1.25rem !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
-        border: none !important;
-        color: #ffffff !important;
-        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35) !important;
-    }
-    .stButton button[kind="primary"]:hover {
-        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
-        transform: translateY(-2px) !important;
-        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5) !important;
-    }
-    .stButton button[kind="secondary"], div.stLinkButton > a {
-        background-color: #ffffff !important;
-        border: 1px solid #cbd5e1 !important;
-        color: #334155 !important;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03) !important;
-    }
-    .stButton button[kind="secondary"]:hover, div.stLinkButton > a:hover {
-        background-color: #f8fafc !important;
-        border-color: #6366f1 !important;
-        color: #4f46e5 !important;
-        transform: translateY(-2px) !important;
     }
 
-    /* Tabs Bar — Cliniva Pill Tabs Styling */
+    /* Cliniva Pill Navigation Tabs */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 6px !important;
+        gap: 8px !important;
         background-color: #ffffff !important;
-        padding: 6px 8px !important;
-        border-radius: 14px !important;
-        border: 1px solid #e2e8f0 !important;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03) !important;
+        padding: 6px 10px !important;
+        border-radius: 16px !important;
+        border: 1px solid #e2e0f5 !important;
+        box-shadow: 0 4px 15px rgba(124, 77, 255, 0.04) !important;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 42px !important;
-        border-radius: 10px !important;
-        padding: 0px 22px !important;
+        height: 44px !important;
+        border-radius: 12px !important;
+        padding: 0px 24px !important;
         color: #64748b !important;
         font-weight: 600 !important;
         border: none !important;
     }
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
+        background: linear-gradient(135deg, #7c4dff 0%, #635bff 100%) !important;
         color: #ffffff !important;
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3) !important;
+        box-shadow: 0 4px 15px rgba(124, 77, 255, 0.35) !important;
     }
 
-    /* Expanders & Cards */
-    div[data-testid="stExpander"] {
-        background-color: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 14px !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+    /* Buttons — Cliniva Vivid Violet & Clean Secondary */
+    .stButton button, div.stButton > button, div.stLinkButton > a {
+        border-radius: 12px !important;
+        font-weight: 600 !important;
+        font-size: 0.92rem !important;
+        padding: 0.55rem 1.35rem !important;
+        transition: all 0.2s ease-in-out !important;
     }
-
-    /* Chat Messages Light Container */
-    [data-testid="stChatMessage"] {
+    .stButton button[kind="primary"] {
+        background: linear-gradient(135deg, #7c4dff 0%, #635bff 100%) !important;
+        border: none !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 15px rgba(124, 77, 255, 0.35) !important;
+    }
+    .stButton button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #6835f5 0%, #5247e6 100%) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 22px rgba(124, 77, 255, 0.5) !important;
+    }
+    .stButton button[kind="secondary"], div.stLinkButton > a {
         background-color: #ffffff !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 14px !important;
-        padding: 16px !important;
-        margin-bottom: 12px !important;
+        border: 1px solid #dcd9f2 !important;
+        color: #334155 !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
     }
+    .stButton button[kind="secondary"]:hover, div.stLinkButton > a:hover {
+        background-color: #f7f6fd !important;
+        border-color: #7c4dff !important;
+        color: #635bff !important;
+        transform: translateY(-2px) !important;
+    }
 
-    /* Data Editor / Tables */
+    /* Expanders & Chat Cards */
+    div[data-testid="stExpander"], [data-testid="stChatMessage"] {
+        background-color: #ffffff !important;
+        border: 1px solid #e8e7f5 !important;
+        border-radius: 16px !important;
+        padding: 16px !important;
+        margin-bottom: 12px !important;
+        box-shadow: 0 3px 12px rgba(124, 77, 255, 0.03) !important;
+    }
+
+    /* Tables & Editors */
     [data-testid="stTable"], [data-testid="stDataEditor"] {
         background-color: #ffffff !important;
-        border-radius: 14px !important;
-        border: 1px solid #e2e8f0 !important;
+        border-radius: 16px !important;
+        border: 1px solid #e8e7f5 !important;
         overflow: hidden !important;
     }
 
     /* Headings */
     h1, h2, h3, h4 {
-        color: #0f172a !important;
-        font-weight: 700 !important;
+        color: #1e1b4b !important;
+        font-weight: 800 !important;
     }
 
-    /* Smooth Custom Scrollbar */
+    /* Custom Scrollbar */
     ::-webkit-scrollbar {
         width: 7px;
         height: 7px;
     }
     ::-webkit-scrollbar-track {
-        background: #f1f5f9;
+        background: #f0f0fa;
     }
     ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
+        background: #c7c7f8;
         border-radius: 4px;
     }
     ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
+        background: #7c4dff;
     }
 </style>
 """, unsafe_allow_html=True)
