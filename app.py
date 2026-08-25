@@ -705,17 +705,21 @@ with st.sidebar:
                 content += f"[{m['role'].upper()}] {m['content']}\n\n"
         return content
 
-    # DESIGN NOTE: Lazy dossier generation using callables to prevent re-computing full patient string concatenation on every script rerun.
+    # DESIGN NOTE: Lazy dossier generation capturing local variables outside the closure to ensure safe context handling without accessing st.session_state inside the deferred callable.
+    _active_name = st.session_state.active_patient
+    _active_record = st.session_state.patients[_active_name]
+    _all_patients_snapshot = dict(st.session_state.patients)
+
     st.download_button(
         "📥 Download Active Patient Dossier",
-        data=lambda: generate_dossier(st.session_state.active_patient, st.session_state.patients[st.session_state.active_patient]),
-        file_name=f"mediscan_dossier_{st.session_state.active_patient.replace(' ', '_')}.txt",
+        data=lambda name=_active_name, record=_active_record: generate_dossier(name, record),
+        file_name=f"mediscan_dossier_{_active_name.replace(' ', '_')}.txt",
         mime="text/plain", use_container_width=True, type="secondary",
     )
 
     st.download_button(
         "📥 Download All Patients Dossier",
-        data=lambda: "\n\n".join(generate_dossier(n, r) for n, r in st.session_state.patients.items()),
+        data=lambda pts=_all_patients_snapshot: "\n\n".join(generate_dossier(n, r) for n, r in pts.items()),
         file_name="mediscan_dossier_all_patients.txt",
         mime="text/plain", use_container_width=True,
     )
