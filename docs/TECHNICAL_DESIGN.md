@@ -1,3 +1,4 @@
+
 # MediScan AI — Technical Design Document
 
 **Project:** MediScan AI  
@@ -32,7 +33,7 @@ graph TD
         Sidebar["Sidebar\n• Language selector\n• Patient profile form\n• Emergency contact\n• Dossier download\n• SOS trigger"]
         Tab1["Tab 1: Symptom Analyzer\n• Structured intake form\n• Chat input + audio recorder\n• Feedback thumbs up/down\n• Nearby Care Centers map\n• Doctor PDF handoff form"]
         Tab2["Tab 2: Report Interpreter\n• Camera capture toggle\n• File uploader (multi)\n• Report history expanders"]
-        Tab3["Tab 3: Health Dashboard\n• KPI metrics row\n• Biometric data editor\n• Risk score line chart\n• Live telemetry fragment\n• AI Health Coach button"]
+        Tab3["Tab 3: Health Dashboard\n• KPI metrics row\n• Biometric data editor\n• Risk score line chart\n• Live telemetry fragment\n• AI Health Coach button\n• Visual Health Reference expander"]
         Tab4["Tab 4: Reminders\n• Date + note form\n• Reminder list with status badges"]
     end
 
@@ -51,6 +52,7 @@ graph TD
         Gemini["Google Gemini 2.0 Flash\n(google-genai SDK)\n• Triage reasoning\n• Vision OCR analysis\n• Preventative health coaching"]
         WhisperSTT["Groq Whisper\nwhisper-large-v3-turbo\n(Speech-to-Text only)"]
         GroqLLM["Groq openai/gpt-oss-20b\n(Second-opinion synthesis only)"]
+        Pollinations["Pollinations AI\n(Flux model)\n• Visual health references"]
     end
 
     subgraph IO["I/O Layer"]
@@ -67,10 +69,12 @@ graph TD
     Tab2 --> Gemini
     Tab2 --> GroqLLM
     Tab3 --> Gemini
+    Tab3 --> Pollinations
     State --> ReportLab
     State --> Webhook
     Gemini --> State
     WhisperSTT --> State
+    Pollinations --> State
 ```
 
 ### 2.2 PatientRecord Schema
@@ -356,6 +360,34 @@ gTTS requires an active network connection (HTTP to Google TTS service). Failure
 
 ---
 
+### 4.4 Pollinations AI (Image Generation API)
+
+```python
+def generate_pollinations_image(prompt: str, width: int = 800, height: int = 480) -> str:
+    import urllib.parse
+    encoded_prompt = urllib.parse.quote(prompt)
+    return (
+        f"https://image.pollinations.ai/prompt/{encoded_prompt}"
+        f"?width={width}&height={height}&model=flux&nologo=true&seed=42"
+    )
+```
+
+**Architectural Role:**  
+Pollinations AI is integrated as an open, zero-authentication text-to-image service powering the "Visual Health Reference" section in Tab 3 (Health Dashboard).
+
+**Dynamic Prompt Selection:**  
+When an AI Health Coach insight is generated, the app evaluates the patient's latest biometric baseline to select a relevant medical illustration topic:
+1. `Health_Risk_Score >= 60` → Cardiovascular system & heart anatomy diagram
+2. `Fasting_Glucose > 100` → Blood glucose monitoring & diabetes prevention
+3. `Systolic_BP > 130` → Blood pressure & arterial health diagram
+4. `Resting_HR > 100` → Heart rate pulse & cardio fitness illustration
+5. Normal baseline → General preventative wellness & lifestyle illustration
+
+**Caching Strategy:**  
+A fixed `seed=42` parameter is included in the URL query string. This ensures that re-renders for identical biometric conditions resolve to the exact same URL, enabling standard browser HTTP caching without server-side image storage overhead.
+
+---
+
 ## 5. Logic Modules Breakdown
 
 | Function | Defined at | Responsibility |
@@ -365,9 +397,10 @@ gTTS requires an active network connection (HTTP to Google TTS service). Failure
 | `fire_emergency_webhook()` | line 305 | POSTs JSON payload to `EMERGENCY_WEBHOOK_URL` with 4-second timeout; logs outcome; appends to `webhook_log`; returns `bool` |
 | `metric_flag()` | line 335 | Applies clinical threshold logic to biometric values; returns `(label, color)` tuple (Low/Normal/Elevated/High) |
 | `render_empty_state()` | line 355 | Renders a styled white card with dashed periwinkle border for empty list states (no reminders, no reports) |
-| `generate_doctor_pdf()` | line 374 | Builds a multi-page ReportLab PDF from patient record; returns `io.BytesIO`; includes: profile table, intake table, biometrics table, triage transcript, report history, blank physician-notes ruled section, CDSCO disclaimer footer |
+| `generate_pollinations_image()` | line 374 | Builds a Pollinations AI image URL with Flux model, fixed seed, and URL-encoded medical prompt |
+| `generate_doctor_pdf()` | line 388 | Builds a multi-page ReportLab PDF from patient record; returns `io.BytesIO`; includes: profile table, intake table, biometrics table, triage transcript, report history, blank physician-notes ruled section, CDSCO disclaimer footer |
 | `generate_dossier()` | line 686 | Builds a plain-text patient summary string; used by sidebar download buttons via lazy-evaluated lambda closures |
-| `render_telemetry()` | line ~1213 | `@st.fragment(run_every=2)` component — see §5.1 below |
+| `render_telemetry()` | line ~1235 | `@st.fragment(run_every=2)` component — see §5.1 below |
 
 ### 5.1 `render_telemetry()` — Resource Guard Design
 

@@ -39,7 +39,7 @@ The system targets triage *assistance*, not diagnosis replacement. Every AI resp
 |---|---|---|
 | 🔬 **Symptom Analyzer** | Conversational triage with structured intake (severity, duration, onset, body areas); ranked differential diagnosis | `gemini-2.0-flash` · Groq `whisper-large-v3-turbo` (STT) · `gTTS` (TTS) |
 | 📄 **Medical Report Interpreter** | Upload / camera-capture lab panels or symptom images; OCR-style extraction with biomarker table + second opinion | `gemini-2.0-flash` (multimodal vision) · Groq `openai/gpt-oss-20b` (second opinion) |
-| 📊 **Health Dashboard** | 6-month biometric editor, risk score chart, live simulated smartwatch telemetry, AI preventative health coach | `gemini-2.0-flash` · `seaborn` / `matplotlib` · `@st.fragment(run_every=2)` |
+| 📊 **Health Dashboard** | 6-month biometric editor, risk score chart, live simulated smartwatch telemetry, AI preventative health coach & visual health references | `gemini-2.0-flash` · `pollinations.ai` (Flux model) · `seaborn` / `matplotlib` · `@st.fragment(run_every=2)` |
 | 🗓️ **Reminders & Care Plan** | Date-stamped care reminders per patient with overdue status, toggle, and delete | Pure `st.session_state` |
 | **Sidebar — Patient Profiles** | Multi-patient records, profile editor (age, sex, weight), weight unit toggle (kg/lb) | `st.session_state` dict keyed by patient name |
 | **Sidebar — Emergency Contact** | SOS alert trigger → `fire_emergency_webhook()` → mock webhook POST | `requests` |
@@ -68,11 +68,13 @@ graph TD
     Tab2 --> GroqLLM["🤖 Groq openai/gpt-oss-20b\n(Second opinion synthesis)"]
 
     Tab3 --> GeminiCoach["🧠 Gemini 2.0 Flash\n(Health Coach)"]
+    Tab3 --> Pollinations["🎨 Pollinations AI\n(Visual Health Reference - Flux)"]
     Tab3 --> Telemetry["📡 @st.fragment\nSimulated smartwatch stream"]
 
     GeminiText --> SessionState["🗃️ st.session_state\n(patients · active_patient\ntriage_prompt_cache\ntelemetry_history\nreminders · webhook_log)"]
     GeminiVision --> SessionState
     GeminiCoach --> SessionState
+    Pollinations --> SessionState
     WhisperSTT --> SessionState
 
     SessionState --> PDF["📄 ReportLab PDF\ngenerate_doctor_pdf()"]
@@ -84,11 +86,12 @@ graph TD
 
 ## > tech_stack
 
-| Library | Version (in requirements.txt) | Purpose |
+| Library / Service | Version / API | Purpose |
 |---|---|---|
 | `streamlit` | latest | UI framework, session state, fragments |
 | `google-genai` | latest | Gemini 2.0 Flash — triage, vision, health coach |
 | `groq` | latest | Whisper STT + second-opinion LLM |
+| `pollinations.ai` | API (Free) | No-key image generation (Flux model) for visual health references |
 | `gTTS` | 2.5.1 | Text-to-speech (multilingual) |
 | `reportlab` | latest | PDF generation via Platypus |
 | `pandas` | latest | Biometric DataFrame, CSV export |
