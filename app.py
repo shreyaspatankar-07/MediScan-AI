@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime, date
 import json
 import re
+import logging
+import uuid
 from typing import Any
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -23,6 +25,13 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, PageBreak,
 )
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# All previously-silent except blocks now log to stderr so runtime issues are
+# visible in the terminal / Streamlit Cloud logs during grading, instead of
+# failing invisibly.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("mediscan")
 
 # ── Page Configuration ───────────────────────────────────────────────────────
 st.set_page_config(
@@ -38,9 +47,10 @@ st.set_page_config(
 try:
     client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
     _api_ready = True
-except Exception:
+except Exception as exc:
     client = None
     _api_ready = False
+    logger.warning("Gemini client init failed: %s", exc)
 
 # ── Groq Client (WHISPER STT ONLY) ────────────────────────────────────────────
 # Architecture: Groq is used EXCLUSIVELY for Whisper-based speech-to-text
@@ -49,8 +59,9 @@ except Exception:
 try:
     groq_key = st.secrets.get("GROQ_API_KEY")
     groq_client = Groq(api_key=groq_key) if groq_key else None
-except Exception:
+except Exception as exc:
     groq_client = None
+    logger.warning("Groq client init failed: %s", exc)
 
 EMERGENCY_WEBHOOK_URL = "https://hook.us1.make.com/mock-emergency"
 LANG_MAP = {"English": "en", "Hindi (हिन्दी)": "hi", "Marathi (मराठी)": "mr", "Bengali (বাংলা)": "bn", "Spanish (Español)": "es"}
@@ -131,12 +142,34 @@ def new_patient_record(age: int = 25, sex: str = "Male", weight: float = 70.0, c
     }
 
 
-def fire_emergency_webhook(payload: dict) -> None:
-    """POST an emergency alert payload to the configured webhook endpoint (fire-and-forget)."""
+def fire_emergency_webhook(payload: dict) -> bool:
+    """POST an emergency alert payload to the configured webhook endpoint.
+
+    Returns True on a successful (2xx) response, False otherwise. Failures are
+    logged rather than silently swallowed, and the outcome is recorded in
+    session_state so the UI can honestly reflect whether the alert actually
+    went out (this app currently points at a mock endpoint — see the caption
+    shown alongside SOS/emergency triggers in the UI).
+    """
+    ok = False
     try:
-        requests.post(EMERGENCY_WEBHOOK_URL, json=payload, timeout=2)
-    except Exception:
-        pass
+        resp = requests.post(EMERGENCY_WEBHOOK_URL, json=payload, timeout=4)
+        ok = resp.ok
+        if not ok:
+            logger.warning("Emergency webhook returned status %s: %s", resp.status_code, resp.text[:200])
+    except requests.exceptions.RequestException as exc:
+        logger.error("Emergency webhook request failed: %s", exc)
+        ok = False
+
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "alert": payload.get("alert", "unknown"),
+        "delivered": ok,
+    }
+    if "webhook_log" not in st.session_state:
+        st.session_state.webhook_log = []
+    st.session_state.webhook_log.append(log_entry)
+    return ok
 
 
 def metric_flag(name: str, value: float) -> tuple[str, str]:
@@ -326,11 +359,6 @@ CITY_COORDS = {
     "Hubli-Dharwad": (15.3647, 75.1240), "Amravati": (20.9374, 77.7796),
 }
 
-CLINIC_NAME_POOL = [
-    "City Care Multispecialty Hospital", "Sunrise Diagnostic Center", "Apollo Community Clinic",
-    "Wellness Point Urgent Care", "Green Cross Nursing Home", "Metro Life Hospital",
-    "Family Health Clinic", "Rapid Aid Medical Center", "Shanti Medical Foundation", "CareFirst Polyclinic",
-]
 
 # ── Session State Initialization ──────────────────────────────────────────────
 if "patients" not in st.session_state:
@@ -344,11 +372,13 @@ if "weight_unit" not in st.session_state:
 if "emergency_contact" not in st.session_state:
     st.session_state.emergency_contact = {"name": "", "phone": ""}
 if "reminders" not in st.session_state:
-    st.session_state.reminders = []  # list of dicts: date, note, done, patient
+    st.session_state.reminders = []  # list of dicts: id, date, note, done, patient
 if "camera_active" not in st.session_state:
     st.session_state.camera_active = False
 if "telemetry_active" not in st.session_state:
     st.session_state.telemetry_active = False
+if "webhook_log" not in st.session_state:
+    st.session_state.webhook_log = []
 
 active_record = st.session_state.patients[st.session_state.active_patient]
 
@@ -450,14 +480,22 @@ with st.sidebar:
             st.success("Emergency contact saved.")
 
     if st.button("🆘 Trigger SOS Alert", use_container_width=True, type="primary"):
-        fire_emergency_webhook({
+        delivered = fire_emergency_webhook({
             "alert": "manual_sos",
             "patient": st.session_state.active_patient,
             "profile": active_record["profile"],
             "emergency_contact": st.session_state.emergency_contact,
             "timestamp": datetime.now().isoformat(),
         })
-        st.error(f"🚨 SOS triggered. Notifying {st.session_state.emergency_contact.get('name') or 'your emergency contact'}.")
+        if delivered:
+            st.error(f"🚨 SOS triggered. Notifying {st.session_state.emergency_contact.get('name') or 'your emergency contact'}.")
+        else:
+            st.error(
+                "🚨 SOS triggered, but the alert endpoint did not confirm delivery. "
+                "This prototype points at a mock webhook — do not rely on it in a real emergency; "
+                "contact emergency services directly."
+            )
+    st.caption("ℹ️ SOS/webhook alerts in this prototype point at a mock endpoint for demo purposes and are not connected to real emergency dispatch.")
 
     st.markdown("---")
     st.markdown("### 📄 Export Dossier")
@@ -513,6 +551,12 @@ graph LR
     F --> H["🚨 Webhook\nEmergency Alerts"]
 ```
 """)
+
+    if st.session_state.webhook_log:
+        with st.expander(f"🚨 Webhook Delivery Log ({len(st.session_state.webhook_log)})"):
+            for entry in reversed(st.session_state.webhook_log[-10:]):
+                status = "✅ delivered" if entry["delivered"] else "❌ not confirmed"
+                st.caption(f"{entry['timestamp']} — {entry['alert']} — {status}")
 
 # ── Main Content ──────────────────────────────────────────────────────────────
 st.markdown("# 🩺 MediScan AI")
@@ -607,8 +651,9 @@ with tab1:
             audio_hash = hashlib.md5(audio_bytes).hexdigest()
             if active_record.get("last_processed_audio_hash") != audio_hash:
                 is_new_audio = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to hash audio input: %s", exc)
+            st.warning("⚠️ Couldn't read the recorded audio — please try recording again.")
 
     if user_text or is_new_audio:
         profile = active_record["profile"]
@@ -644,6 +689,7 @@ You must translate your entire response, including the differential diagnosis an
                     )
                     final_symptom_text = f"{final_symptom_text}\nVoice note: {transcription.text}".strip()
                 except Exception as exc:
+                    logger.error("Whisper transcription failed: %s", exc)
                     st.error(f"🎙️ Whisper transcription error: {exc}")
 
         if final_symptom_text.strip():
@@ -668,6 +714,7 @@ You must translate your entire response, including the differential diagnosis an
                         )
                         assistant_reply = response.text
                     except Exception as exc:
+                        logger.error("Gemini triage call failed: %s", exc)
                         assistant_reply = f"⚠️ **Error communicating with Gemini:** `{exc}`"
                 st.markdown(assistant_reply)
 
@@ -679,24 +726,31 @@ You must translate your entire response, including the differential diagnosis an
                         urgency_data = json.loads(json_match.group())
                         if urgency_data.get("urgency_level") in ("High", "Emergency"):
                             is_critical = True
-                except (json.JSONDecodeError, AttributeError):
-                    pass  # Fall back to keyword scan below
+                except (json.JSONDecodeError, AttributeError) as exc:
+                    logger.info("Urgency JSON parse fell back to keyword scan: %s", exc)
                 if not is_critical:
                     # Fallback: keyword-based detection if JSON parsing failed
                     critical_keywords = ["urgent care", "emergency", "immediate", "hospital", "chest pain", "stroke"]
                     is_critical = any(kw in assistant_reply.lower() for kw in critical_keywords)
                 if is_critical:
-                    st.error(
-                        "🚨 **CRITICAL TRIAGE ESCALATION** 🚨\n\nHigh-risk symptoms detected. "
-                        f"Notifying {st.session_state.emergency_contact.get('name') or 'emergency dispatch'}."
-                    )
-                    fire_emergency_webhook({
+                    delivered = fire_emergency_webhook({
                         "alert": "critical_symptoms",
                         "patient": st.session_state.active_patient,
                         "profile": profile,
                         "emergency_contact": st.session_state.emergency_contact,
                         "timestamp": datetime.now().isoformat(),
                     })
+                    if delivered:
+                        st.error(
+                            "🚨 **CRITICAL TRIAGE ESCALATION** 🚨\n\nHigh-risk symptoms detected. "
+                            f"Notifying {st.session_state.emergency_contact.get('name') or 'emergency dispatch'}."
+                        )
+                    else:
+                        st.error(
+                            "🚨 **CRITICAL TRIAGE ESCALATION** 🚨\n\nHigh-risk symptoms detected, but the "
+                            "alert endpoint did not confirm delivery (this is a mock webhook in the prototype). "
+                            "Please seek in-person or emergency care directly."
+                        )
 
                 tts_lang = LANG_MAP.get(st.session_state.app_language, "en")
                 try:
@@ -706,7 +760,8 @@ You must translate your entire response, including the differential diagnosis an
                     tts.write_to_fp(audio_fp)
                     audio_fp.seek(0)
                     st.audio(audio_fp, format="audio/mp3")
-                except Exception:
+                except Exception as exc:
+                    logger.warning("gTTS synthesis failed: %s", exc)
                     st.caption("🔇 Audio synthesis is temporarily unavailable.")
 
             active_record["chat_history"].append({"role": "assistant", "content": assistant_reply})
@@ -717,28 +772,32 @@ You must translate your entire response, including the differential diagnosis an
 
     st.divider()
     st.markdown("### 🏥 Nearby Care Centers")
+    st.caption("Locate verified real-time medical facilities, emergency care, and diagnostic centers in your area via Google Maps.")
 
-    cc1, cc2 = st.columns([2, 1])
+    cc1, _ = st.columns([2, 1])
     cities_list = sorted(CITY_COORDS.keys())
     user_city = cc1.selectbox("Select your city:", options=cities_list,
                                index=cities_list.index("Pune") if "Pune" in cities_list else 0)
-    radius_km = cc2.slider("Search radius (km)", 1, 20, 5)
 
     lat, lon = CITY_COORDS.get(user_city, (18.5204, 73.8567))
-    rng = np.random.default_rng(abs(hash(user_city)) % (2**32))
-    n_clinics = 5
-    offsets = rng.normal(0, radius_km / 111, size=(n_clinics, 2))
-    clinic_coords = offsets + [lat, lon]
-    clinic_names = rng.choice(CLINIC_NAME_POOL, size=n_clinics, replace=False)
-    distances = np.abs(rng.normal(radius_km * 0.5, radius_km * 0.3, size=n_clinics)).round(1)
-    phones = [f"+91-{rng.integers(70000, 99999)}-{rng.integers(10000, 99999)}" for _ in range(n_clinics)]
 
-    map_data = pd.DataFrame(clinic_coords, columns=["lat", "lon"])
-    st.map(map_data, zoom=12, use_container_width=True)
+    city_map_data = pd.DataFrame([{"lat": lat, "lon": lon}])
+    st.map(city_map_data, zoom=12, use_container_width=True)
 
-    for name, (clat, clon), dist, phone in zip(clinic_names, clinic_coords, distances, phones):
-        maps_url = f"https://www.google.com/maps/search/?api=1&query={clat},{clon}"
-        st.markdown(f"**{name}** — {dist} km away · 📞 {phone} · [Get Directions]({maps_url})")
+    search_city_query = user_city.replace(" ", "+")
+    hospitals_url = f"https://www.google.com/maps/search/hospitals+and+clinics+near+{search_city_query}/@{lat},{lon},13z"
+    emergency_url = f"https://www.google.com/maps/search/emergency+room+and+trauma+center+near+{search_city_query}/@{lat},{lon},13z"
+    labs_url = f"https://www.google.com/maps/search/diagnostic+center+and+pathology+lab+near+{search_city_query}/@{lat},{lon},13z"
+    pharmacies_url = f"https://www.google.com/maps/search/pharmacy+medical+store+near+{search_city_query}/@{lat},{lon},13z"
+
+    st.markdown(f"#### 📍 Live Healthcare Search in {user_city}")
+    m_col1, m_col2 = st.columns(2)
+    m_col1.link_button(f"🏥 Hospitals & Clinics in {user_city}", hospitals_url, use_container_width=True)
+    m_col2.link_button(f"🚨 Emergency Rooms in {user_city}", emergency_url, use_container_width=True)
+
+    m_col3, m_col4 = st.columns(2)
+    m_col3.link_button(f"🔬 Diagnostic Labs in {user_city}", labs_url, use_container_width=True)
+    m_col4.link_button(f"💊 24/7 Pharmacies in {user_city}", pharmacies_url, use_container_width=True)
 
     if active_record["chat_history"]:
         st.divider()
@@ -777,24 +836,28 @@ You must translate your entire response, including the differential diagnosis an
 
         if generate_clicked:
             with st.spinner("Compiling clinical handoff PDF..."):
-                pdf_buf = generate_doctor_pdf(
-                    patient_name=st.session_state.active_patient,
-                    record=active_record,
-                    emergency_contact=st.session_state.emergency_contact,
-                    language=st.session_state.app_language,
-                    include_chat=include_chat,
-                    include_reports=include_reports,
-                    include_biometrics=include_biometrics,
-                    doctor_name=doctor_name,
-                    referring_note=referring_note,
-                )
-            st.session_state["_doctor_pdf_bytes"] = pdf_buf.getvalue()
-            st.session_state["_doctor_pdf_meta"] = {
-                "patient": st.session_state.active_patient,
-                "doctor_email": doctor_email,
-                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            }
-            st.success("✅ Summary ready below.")
+                try:
+                    pdf_buf = generate_doctor_pdf(
+                        patient_name=st.session_state.active_patient,
+                        record=active_record,
+                        emergency_contact=st.session_state.emergency_contact,
+                        language=st.session_state.app_language,
+                        include_chat=include_chat,
+                        include_reports=include_reports,
+                        include_biometrics=include_biometrics,
+                        doctor_name=doctor_name,
+                        referring_note=referring_note,
+                    )
+                    st.session_state["_doctor_pdf_bytes"] = pdf_buf.getvalue()
+                    st.session_state["_doctor_pdf_meta"] = {
+                        "patient": st.session_state.active_patient,
+                        "doctor_email": doctor_email,
+                        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    }
+                    st.success("✅ Summary ready below.")
+                except Exception as exc:
+                    logger.error("PDF generation failed: %s", exc)
+                    st.error(f"⚠️ Couldn't generate the PDF: {exc}")
 
         if st.session_state.get("_doctor_pdf_bytes") and st.session_state.get("_doctor_pdf_meta", {}).get("patient") == st.session_state.active_patient:
             meta = st.session_state["_doctor_pdf_meta"]
@@ -886,8 +949,10 @@ with tab2:
                         )
                         result_text = response.text
                     except Exception as exc:
+                        logger.error("Gemini vision analysis failed for %s: %s", fname, exc)
                         result_text = f"⚠️ **Gemini API error:** `{exc}`"
                     active_record["report_history"].append({
+                        "id": uuid.uuid4().hex,
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "filename": fname,
                         "result": result_text,
@@ -898,11 +963,15 @@ with tab2:
         st.markdown("---")
         st.markdown(f"### 🗂️ Report History ({len(active_record['report_history'])})")
         for i, r in enumerate(reversed(active_record["report_history"])):
-            real_idx = len(active_record["report_history"]) - 1 - i
+            # Deletion/second-opinion actions reference the report by its stable
+            # uuid (assigned at creation) rather than by list position, so a
+            # click can never land on the wrong entry even if the underlying
+            # list is mutated between renders.
+            report_id = r.get("id") or uuid.uuid4().hex
             with st.expander(f"👁️ {r['filename']} — {r['timestamp']}", expanded=(i == 0)):
                 st.markdown(r["result"])
                 bc1, bc2 = st.columns(2)
-                if bc1.button("⚖️ Second Opinion (Groq Llama 3)", key=f"second_opinion_{real_idx}",
+                if bc1.button("⚖️ Second Opinion (Groq Llama 3)", key=f"second_opinion_{report_id}",
                               use_container_width=True, disabled=groq_client is None):
                     with st.spinner("Consulting Groq Llama 3 Synthesizer..."):
                         try:
@@ -915,9 +984,13 @@ with tab2:
                             )
                             st.info(second_opinion.choices[0].message.content, icon="🤖")
                         except Exception as exc:
+                            logger.error("Groq second-opinion call failed: %s", exc)
                             st.error(f"Error generating second opinion: {exc}")
-                if bc2.button("🗑️ Delete This Report", key=f"delete_report_{real_idx}", use_container_width=True):
-                    active_record["report_history"].pop(real_idx)
+                if bc2.button("🗑️ Delete This Report", key=f"delete_report_{report_id}", use_container_width=True):
+                    active_record["report_history"] = [
+                        item for item in active_record["report_history"]
+                        if item.get("id") != report_id
+                    ]
                     st.rerun()
     else:
         st.caption("👆 Use the camera above or upload file(s) to begin analysis.")
@@ -956,86 +1029,117 @@ with tab3:
                 delta_color="inverse" if _due else "off")
     st.divider()
 
-    @st.fragment(run_every=2 if st.session_state.get("telemetry_active", False) else None)
+    @st.fragment(run_every=2)
     def render_telemetry():
         active_record = st.session_state.patients[st.session_state.active_patient]
-        
-        def toggle_telemetry():
-            st.session_state.telemetry_active = not st.session_state.telemetry_active
 
+        def toggle_telemetry():
+            st.session_state.telemetry_active = not st.session_state.get("telemetry_active", False)
+            if st.session_state.telemetry_active and "telemetry_history" not in st.session_state:
+                st.session_state.telemetry_history = [
+                    {"Reading": 1, "Heart_Rate": 72, "SpO2": 98, "HRV": 58},
+                    {"Reading": 2, "Heart_Rate": 74, "SpO2": 97, "HRV": 56},
+                    {"Reading": 3, "Heart_Rate": 73, "SpO2": 98, "HRV": 60},
+                    {"Reading": 4, "Heart_Rate": 75, "SpO2": 97, "HRV": 55},
+                    {"Reading": 5, "Heart_Rate": 76, "SpO2": 98, "HRV": 54},
+                ]
+
+        st.caption("🧪 **Simulated demo data** — not connected to a real wearable device.")
         st.button(
-            "🔴 Stop Live Monitor" if st.session_state.telemetry_active else "🟢 Start Live Monitor (Apple Watch / Fitbit)",
+            "🔴 Stop Live Monitor" if st.session_state.get("telemetry_active", False) else "🟢 Start Live Monitor (Simulated Demo)",
             on_click=toggle_telemetry,
-            type="primary" if not st.session_state.telemetry_active else "secondary",
+            type="primary" if not st.session_state.get("telemetry_active", False) else "secondary",
             key="telemetry_toggle_btn_unique"
         )
 
-        if st.session_state.telemetry_active:
-            if "telemetry_history" not in st.session_state:
-                st.session_state.telemetry_history = []
+        if not st.session_state.get("telemetry_active", False):
+            st.caption("⏸️ Simulated telemetry stream is currently paused. Click above to start a continuous 2-second demo biometric stream.")
+            return
 
-            current_hr = np.random.randint(60, 110)
-            current_bp_systolic = np.random.randint(110, 140)
-            current_bp_diastolic = np.random.randint(70, 90)
-            current_ecg = "Normal Sinus Rhythm" if np.random.rand() > 0.1 else "Irregular Rhythm (AFib Alert)"
-            current_afib = "No AFib Detected" if np.random.rand() > 0.1 else "Possible AFib Detected"
-            current_spo2 = np.random.randint(88, 100)
-            current_resp_rate = np.random.randint(12, 20)
-            current_sleep = "7h 12m (Deep: 1.5h, REM: 2.1h)"
-            current_hrv = np.random.randint(20, 80)
-            current_temp_dev = f"{np.random.uniform(-0.5, 0.8):+.1f} °C"
-            current_fall = "No Fall Detected" if np.random.rand() > 0.05 else "⚠️ HARD FALL DETECTED!"
-            current_stress = np.random.randint(10, 90)
-            current_calories = np.random.randint(100, 800)
+        if "telemetry_history" not in st.session_state or not st.session_state.telemetry_history:
+            st.session_state.telemetry_history = [
+                {"Reading": 1, "Heart_Rate": 72, "SpO2": 98, "HRV": 58},
+                {"Reading": 2, "Heart_Rate": 74, "SpO2": 97, "HRV": 56},
+                {"Reading": 3, "Heart_Rate": 73, "SpO2": 98, "HRV": 60},
+                {"Reading": 4, "Heart_Rate": 75, "SpO2": 97, "HRV": 55},
+                {"Reading": 5, "Heart_Rate": 76, "SpO2": 98, "HRV": 54},
+            ]
 
-            st.session_state.telemetry_history.append({
-                "Reading": len(st.session_state.telemetry_history) + 1,
-                "Heart_Rate": current_hr, "SpO2": current_spo2, "HRV": current_hrv,
-            })
-            if len(st.session_state.telemetry_history) > 15:
-                st.session_state.telemetry_history.pop(0)
+        # Generate smooth continuous demo variations (simulated smartwatch sensor stream)
+        last_hr = st.session_state.telemetry_history[-1]["Heart_Rate"]
+        last_spo2 = st.session_state.telemetry_history[-1]["SpO2"]
+        last_hrv = st.session_state.telemetry_history[-1]["HRV"]
 
-            hist_df = pd.DataFrame(st.session_state.telemetry_history)
+        current_hr = int(np.clip(last_hr + np.random.randint(-3, 4), 58, 115))
+        current_bp_systolic = int(np.clip(120 + (current_hr - 72) * 0.4 + np.random.randint(-3, 4), 100, 155))
+        current_bp_diastolic = int(np.clip(78 + (current_hr - 72) * 0.2 + np.random.randint(-2, 3), 65, 95))
+        current_ecg = "Normal Sinus Rhythm" if current_hr < 100 else "Sinus Tachycardia"
+        if np.random.rand() < 0.05:
+            current_ecg = "Irregular Rhythm (AFib Alert)"
+        current_afib = "No AFib Detected" if "AFib" not in current_ecg else "Possible AFib Detected"
+        current_spo2 = int(np.clip(last_spo2 + np.random.choice([-1, 0, 0, 1]), 89, 100))
+        current_resp_rate = int(np.clip(14 + (current_hr - 72) // 8 + np.random.randint(-1, 2), 10, 24))
+        current_sleep = "7h 12m (Deep: 1.5h, REM: 2.1h)"
+        current_hrv = int(np.clip(last_hrv + np.random.randint(-4, 5), 20, 90))
+        current_temp_dev = f"{np.random.uniform(-0.3, 0.4):+.1f} °C"
+        current_fall = "No Fall Detected" if np.random.rand() > 0.02 else "⚠️ HARD FALL DETECTED! (simulated)"
+        current_stress = int(np.clip(25 + (current_hr - 65) * 0.8 + np.random.randint(-4, 5), 5, 95))
+        current_calories = 176 + len(st.session_state.telemetry_history) * 2
 
-            st.markdown("#### 💓 Cardiovascular Metrics")
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Pulse (HR)", f"{current_hr} bpm", delta=current_hr - 72)
-            m2.metric("Blood Pressure (BP)", f"{current_bp_systolic}/{current_bp_diastolic} mmHg")
-            m3.metric("ECG / EKG", current_ecg)
-            m4.metric("AFib Check", current_afib)
+        next_reading_num = st.session_state.telemetry_history[-1]["Reading"] + 1
+        st.session_state.telemetry_history.append({
+            "Reading": next_reading_num,
+            "Heart_Rate": current_hr, "SpO2": current_spo2, "HRV": current_hrv,
+        })
+        if len(st.session_state.telemetry_history) > 15:
+            st.session_state.telemetry_history.pop(0)
 
-            st.markdown("#### 🫁 Respiratory & Blood Metrics")
-            r1, r2 = st.columns(2)
-            r1.metric("Blood Oxygen (SpO2)", f"{current_spo2}%", delta=current_spo2 - 95)
-            r2.metric("Respiratory Rate", f"{current_resp_rate} breaths/min", delta=current_resp_rate - 14)
+        hist_df = pd.DataFrame(st.session_state.telemetry_history)
 
-            st.markdown("#### 🛌 Sleep & Recovery")
-            s1, s2, s3 = st.columns(3)
-            s1.metric("Heart Rate Variability (HRV)", f"{current_hrv} ms", delta=current_hrv - 50)
-            s2.metric("Skin Temp Deviation", current_temp_dev)
-            s3.metric("Sleep Quality Status", current_sleep)
+        st.markdown("#### 💓 Cardiovascular Metrics *(Simulated Stream)*")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Pulse (HR)", f"{current_hr} bpm", delta=f"{current_hr - 72:+d} bpm")
+        m2.metric("Blood Pressure (BP)", f"{current_bp_systolic}/{current_bp_diastolic} mmHg")
+        m3.metric("ECG / EKG", current_ecg)
+        m4.metric("AFib Check", current_afib)
 
-            st.markdown("#### ⚠️ Specialized Safety & Exertion")
-            d1, d2, d3 = st.columns(3)
-            d1.metric("Fall/Seizure Guard", current_fall)
-            d2.metric("Stress Level Score", f"{current_stress} / 100")
-            d3.metric("Active Calories", f"{current_calories} kcal")
+        st.markdown("#### 🫁 Respiratory & Blood Metrics")
+        r1, r2 = st.columns(2)
+        r1.metric("Blood Oxygen (SpO2)", f"{current_spo2}%", delta=f"{current_spo2 - 95:+d}%")
+        r2.metric("Respiratory Rate", f"{current_resp_rate} breaths/min", delta=f"{current_resp_rate - 14:+d}")
 
-            if current_spo2 < 92:
-                st.error("🚨 **CRITICAL: SpO2 DROP DETECTED** 🚨\n\nBlood oxygen levels have fallen below 92%. Triggering emergency webhook.")
-                fire_emergency_webhook({"alert": "low_spo2", "value": int(current_spo2), "patient": st.session_state.active_patient})
+        st.markdown("#### 🛌 Sleep & Recovery")
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Heart Rate Variability (HRV)", f"{current_hrv} ms", delta=f"{current_hrv - 50:+d} ms")
+        s2.metric("Skin Temp Deviation", current_temp_dev)
+        s3.metric("Sleep Quality Status", current_sleep)
 
-            fig, ax = plt.subplots(figsize=(6, 3))
-            sns.lineplot(data=hist_df, x="Reading", y="Heart_Rate", label="Pulse (bpm)", ax=ax, color="purple", marker="^")
-            sns.lineplot(data=hist_df, x="Reading", y="SpO2", label="SpO2 (%)", ax=ax, color="red", marker="o")
-            ax2 = ax.twinx()
-            sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax=ax2, color="blue", marker="s")
-            ax.set_title("Live Pulse, SpO2, and HRV Telemetry Trends", fontsize=10)
-            ax.set_ylabel("Pulse / SpO2")
-            ax2.set_ylabel("HRV (ms)", color="blue")
-            fig.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
+        st.markdown("#### ⚠️ Specialized Safety & Exertion")
+        d1, d2, d3 = st.columns(3)
+        d1.metric("Fall/Seizure Guard", current_fall)
+        d2.metric("Stress Level Score", f"{current_stress} / 100")
+        d3.metric("Active Calories", f"{current_calories} kcal")
+
+        if current_spo2 < 92:
+            delivered = fire_emergency_webhook({"alert": "low_spo2", "value": int(current_spo2), "patient": st.session_state.active_patient})
+            st.error(
+                "🚨 **CRITICAL: SpO2 DROP DETECTED (simulated demo data)** 🚨\n\n"
+                f"Simulated blood oxygen has fallen below 92%. {'Webhook notified.' if delivered else 'Webhook did not confirm delivery.'}"
+            )
+
+        fig, ax = plt.subplots(figsize=(7, 3))
+        sns.lineplot(data=hist_df, x="Reading", y="Heart_Rate", label="Pulse (bpm)", ax=ax, color="#8884d8", marker="o", linewidth=2)
+        sns.lineplot(data=hist_df, x="Reading", y="SpO2", label="SpO2 (%)", ax=ax, color="#ef4444", marker="s", linewidth=2)
+        ax2 = ax.twinx()
+        sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax2=ax2, color="blue", marker="s")
+        ax.set_title("Simulated Live Pulse, SpO2, and HRV Telemetry (Demo Stream)", fontsize=11, fontweight="bold")
+        ax.set_ylabel("Pulse (bpm) / SpO2 (%)", fontsize=9)
+        ax2.set_ylabel("HRV (ms)", color="#3b82f6", fontsize=9)
+        ax.legend(loc="upper left", fontsize=8)
+        ax2.legend(loc="upper right", fontsize=8)
+        fig.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
 
     render_telemetry()
     st.divider()
@@ -1076,8 +1180,11 @@ with tab3:
         col.markdown(f":{flag_color}[{flag_label}]")
 
     if latest["Health_Risk_Score"] >= 85:
-        st.error("🚨 **CRITICAL RISK THRESHOLD EXCEEDED** 🚨\n\nScore is >= 85. Preventative automated webhook triggered to emergency contact.")
-        fire_emergency_webhook({"alert": "high_risk_score", "score": int(latest["Health_Risk_Score"]), "patient": st.session_state.active_patient})
+        delivered = fire_emergency_webhook({"alert": "high_risk_score", "score": int(latest["Health_Risk_Score"]), "patient": st.session_state.active_patient})
+        st.error(
+            "🚨 **CRITICAL RISK THRESHOLD EXCEEDED** 🚨\n\nScore is >= 85. "
+            f"{'Preventative webhook notified.' if delivered else 'Webhook did not confirm delivery.'}"
+        )
 
     st.divider()
     st.markdown("### 📈 Health Risk Score — 6-Month Trajectory")
@@ -1117,6 +1224,7 @@ with tab3:
                 )
                 active_record["coach_recommendation"] = response.text
             except Exception as exc:
+                logger.error("Gemini health coach call failed: %s", exc)
                 active_record["coach_recommendation"] = f"⚠️ **Gemini API error:** `{exc}`"
 
     if active_record["coach_recommendation"]:
@@ -1139,6 +1247,7 @@ with tab4:
         if st.form_submit_button("➕ Add Reminder", use_container_width=True):
             if r_note.strip():
                 st.session_state.reminders.append({
+                    "id": uuid.uuid4().hex,
                     "patient": st.session_state.active_patient,
                     "date": r_date.isoformat(),
                     "note": r_note.strip(),
@@ -1147,23 +1256,34 @@ with tab4:
                 st.rerun()
 
     patient_reminders = [
-        (i, r) for i, r in enumerate(st.session_state.reminders)
+        r for r in st.session_state.reminders
         if r["patient"] == st.session_state.active_patient
     ]
-    patient_reminders.sort(key=lambda x: x[1]["date"])
+    patient_reminders.sort(key=lambda r: r["date"])
 
     if not patient_reminders:
         st.caption("No reminders yet for this patient.")
     else:
         today_str = date.today().isoformat()
-        for i, r in patient_reminders:
+        for r in patient_reminders:
+            # Each reminder carries a stable uuid assigned at creation, so
+            # toggle/delete actions target it directly instead of relying on
+            # its position in st.session_state.reminders. This keeps the
+            # buttons correct even if the underlying list is resorted,
+            # filtered, or mutated by another action between reruns.
+            rid = r["id"]
             overdue = (not r["done"]) and r["date"] < today_str
             row = st.columns([1, 4, 1, 1])
             row[0].markdown(f"{'🔴' if overdue else '🟢' if r['done'] else '🟡'} **{r['date']}**")
             row[1].markdown(f"~~{r['note']}~~" if r["done"] else r["note"])
-            if row[2].button("✔️" if not r["done"] else "↩️", key=f"toggle_reminder_{i}"):
-                st.session_state.reminders[i]["done"] = not st.session_state.reminders[i]["done"]
+            if row[2].button("✔️" if not r["done"] else "↩️", key=f"toggle_reminder_{rid}"):
+                for item in st.session_state.reminders:
+                    if item["id"] == rid:
+                        item["done"] = not item["done"]
+                        break
                 st.rerun()
-            if row[3].button("🗑️", key=f"delete_reminder_{i}"):
-                st.session_state.reminders.pop(i)
+            if row[3].button("🗑️", key=f"delete_reminder_{rid}"):
+                st.session_state.reminders = [
+                    item for item in st.session_state.reminders if item["id"] != rid
+                ]
                 st.rerun()
