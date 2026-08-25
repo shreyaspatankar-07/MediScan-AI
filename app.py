@@ -352,6 +352,25 @@ def metric_flag(name: str, value: float) -> tuple[str, str]:
     return "🔴 High", "red"
 
 
+def render_empty_state(icon: str, title: str, subtitle: str):
+    """Render a styled Cliniva empty state card with icon and description."""
+    st.markdown(f"""
+    <div style="
+        background-color: #ffffff;
+        border: 1px dashed #c7c7f8;
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+        margin: 12px 0;
+        box-shadow: 0 2px 10px rgba(124, 77, 255, 0.03);
+    ">
+        <div style="font-size: 2.2rem; margin-bottom: 8px;">{icon}</div>
+        <div style="font-weight: 700; color: #1e1b4b; font-size: 1rem; margin-bottom: 4px;">{title}</div>
+        <div style="color: #64748b; font-size: 0.85rem;">{subtitle}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
 def generate_doctor_pdf(patient_name, record, emergency_contact, language,
                          include_chat=True, include_reports=True, include_biometrics=True,
                          doctor_name="", referring_note=""):
@@ -539,6 +558,10 @@ if "telemetry_active" not in st.session_state:
     st.session_state.telemetry_active = False
 if "webhook_log" not in st.session_state:
     st.session_state.webhook_log = []
+if "triage_prompt_cache" not in st.session_state:
+    st.session_state.triage_prompt_cache = {}
+if "telemetry_tick_count" not in st.session_state:
+    st.session_state.telemetry_tick_count = 0
 
 active_record = st.session_state.patients[st.session_state.active_patient]
 
@@ -682,17 +705,18 @@ with st.sidebar:
                 content += f"[{m['role'].upper()}] {m['content']}\n\n"
         return content
 
+    # DESIGN NOTE: Lazy dossier generation using callables to prevent re-computing full patient string concatenation on every script rerun.
     st.download_button(
         "📥 Download Active Patient Dossier",
-        data=generate_dossier(st.session_state.active_patient, active_record),
+        data=lambda: generate_dossier(st.session_state.active_patient, st.session_state.patients[st.session_state.active_patient]),
         file_name=f"mediscan_dossier_{st.session_state.active_patient.replace(' ', '_')}.txt",
         mime="text/plain", use_container_width=True, type="secondary",
     )
 
-    all_dossiers = "\n\n".join(generate_dossier(n, r) for n, r in st.session_state.patients.items())
     st.download_button(
         "📥 Download All Patients Dossier",
-        data=all_dossiers, file_name="mediscan_dossier_all_patients.txt",
+        data=lambda: "\n\n".join(generate_dossier(n, r) for n, r in st.session_state.patients.items()),
+        file_name="mediscan_dossier_all_patients.txt",
         mime="text/plain", use_container_width=True,
     )
 
@@ -863,20 +887,33 @@ You must translate your entire response, including the differential diagnosis an
                 role_label = "Patient" if msg["role"] == "user" else "MediScan AI"
                 conversation_context += f"{role_label}: {msg['content']}\n\n"
 
+            # Programmatic prompt deduplication / cache lookup to prevent redundant Gemini API calls on duplicate submissions
+            prompt_cache_key = hashlib.md5(
+                f"{st.session_state.active_patient}_{final_symptom_text}_{st.session_state.app_language}_{intake_summary}".encode()
+            ).hexdigest()
+
             assistant_reply = None
-            with st.chat_message("assistant"):
-                with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
-                    try:
-                        response = client.models.generate_content(
-                            model="gemini-2.0-flash",
-                            contents=conversation_context,
-                            config=types.GenerateContentConfig(system_instruction=dynamic_system_instruction),
-                        )
-                        assistant_reply = response.text
-                    except Exception as exc:
-                        logger.error("Gemini triage call failed: %s", exc)
-                        assistant_reply = f"⚠️ **Error communicating with Gemini:** `{exc}`"
-                st.markdown(assistant_reply)
+            if prompt_cache_key in st.session_state.triage_prompt_cache:
+                logger.info("Serving cached triage response for prompt key %s", prompt_cache_key)
+                assistant_reply = st.session_state.triage_prompt_cache[prompt_cache_key]
+                with st.chat_message("assistant"):
+                    st.caption("⚡ *Loaded from session cache*")
+                    st.markdown(assistant_reply)
+            else:
+                with st.chat_message("assistant"):
+                    with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
+                        try:
+                            response = client.models.generate_content(
+                                model="gemini-2.0-flash",
+                                contents=conversation_context,
+                                config=types.GenerateContentConfig(system_instruction=dynamic_system_instruction),
+                            )
+                            assistant_reply = response.text
+                            st.session_state.triage_prompt_cache[prompt_cache_key] = assistant_reply
+                        except Exception as exc:
+                            logger.error("Gemini triage call failed: %s", exc)
+                            assistant_reply = f"⚠️ **Error communicating with Gemini:** `{exc}`"
+                    st.markdown(assistant_reply)
 
                 # ── Programmatic urgency detection via structured JSON output ──
                 is_critical = False
@@ -1082,6 +1119,7 @@ with tab2:
                 preview_cols[i % 4].image(fobj, caption=fname, use_container_width=True)
 
         # DESIGN NOTE: Analyze button outside form — triggers analysis immediately on click.
+        # DESIGN NOTE: Located outside st.form to enable single-click instant multimodal vision analysis without requiring multi-field form state validation.
         if st.button("🔍 Analyze Image(s)", key="analyze_report", type="primary", use_container_width=True):
             lang_vision_instruction = VISION_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your entire analysis and the CDSCO disclaimer in {st.session_state.app_language}."
             # Build patient context for contextually-aware vision analysis
@@ -1091,6 +1129,7 @@ with tab2:
                 f"PATIENT CONTEXT: Age {prof.get('age', '?')}, Sex {prof.get('sex', '?')}, "
                 f"Weight {prof.get('weight_kg', '?')} kg, Conditions: {prof.get('chronic_conditions') or 'None'}"
             )
+            # DESIGN NOTE: Truncating chat history to recent 3 turns (max 200 chars/msg) to maintain optimal token efficiency, focus vision context on acute symptoms, and manage API cost.
             recent_msgs = active_record["chat_history"][-3:]
             if recent_msgs:
                 vision_context_parts.append("RECENT SYMPTOM TRIAGE CONTEXT:")
@@ -1153,7 +1192,7 @@ with tab2:
                     ]
                     st.rerun()
     else:
-        st.caption("👆 Use the camera above or upload file(s) to begin analysis.")
+        render_empty_state("🔬", "No Medical Reports Analyzed Yet", "Upload a lab panel image or open your camera above to begin instant AI analysis.")
 
 # ── Tab 3: Health Dashboard ────────────────────────────────────────────────────
 with tab3:
@@ -1195,6 +1234,7 @@ with tab3:
 
         def toggle_telemetry():
             st.session_state.telemetry_active = not st.session_state.get("telemetry_active", False)
+            st.session_state.telemetry_tick_count = 0
             if st.session_state.telemetry_active and "telemetry_history" not in st.session_state:
                 st.session_state.telemetry_history = [
                     {"Reading": 1, "Heart_Rate": 72, "SpO2": 98, "HRV": 58},
@@ -1213,7 +1253,15 @@ with tab3:
         )
 
         if not st.session_state.get("telemetry_active", False):
-            st.caption("⏸️ Simulated telemetry stream is currently paused. Click above to start a continuous 2-second demo biometric stream.")
+            st.caption("⏸️ Simulated telemetry stream is currently paused. Click above to start a 2-second demo biometric stream.")
+            return
+
+        # DESIGN NOTE (Resource Guard): Auto-pause the fragment rerun loop after 30 ticks (60s) to prevent unbounded background execution.
+        st.session_state.telemetry_tick_count = st.session_state.get("telemetry_tick_count", 0) + 1
+        if st.session_state.telemetry_tick_count > 30:
+            st.session_state.telemetry_active = False
+            st.session_state.telemetry_tick_count = 0
+            st.info("⏸️ **Live stream auto-paused after 60 seconds (resource optimization guard).** Click 'Start Live Monitor' to resume streaming.")
             return
 
         if "telemetry_history" not in st.session_state or not st.session_state.telemetry_history:
@@ -1256,29 +1304,37 @@ with tab3:
 
         hist_df = pd.DataFrame(st.session_state.telemetry_history)
 
-        st.markdown("#### 💓 Cardiovascular Metrics *(Simulated Stream)*")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Pulse (HR)", f"{current_hr} bpm", delta=f"{current_hr - 72:+d} bpm")
-        m2.metric("Blood Pressure (BP)", f"{current_bp_systolic}/{current_bp_diastolic} mmHg")
-        m3.metric("ECG / EKG", current_ecg)
-        m4.metric("AFib Check", current_afib)
+        # DESIGN NOTE: Categorized sub-tabs to prevent UI clutter and present dense biometric metrics cleanly
+        t_cardio, t_resp, t_sleep, t_safety = st.tabs([
+            "💓 Cardiovascular", 
+            "🫁 Respiratory & Blood", 
+            "🛌 Sleep & Recovery", 
+            "⚠️ Safety & Exertion"
+        ])
 
-        st.markdown("#### 🫁 Respiratory & Blood Metrics")
-        r1, r2 = st.columns(2)
-        r1.metric("Blood Oxygen (SpO2)", f"{current_spo2}%", delta=f"{current_spo2 - 95:+d}%")
-        r2.metric("Respiratory Rate", f"{current_resp_rate} breaths/min", delta=f"{current_resp_rate - 14:+d}")
+        with t_cardio:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Pulse (HR)", f"{current_hr} bpm", delta=f"{current_hr - 72:+d} bpm")
+            m2.metric("Blood Pressure (BP)", f"{current_bp_systolic}/{current_bp_diastolic} mmHg")
+            m3.metric("ECG / EKG", current_ecg)
+            m4.metric("AFib Check", current_afib)
 
-        st.markdown("#### 🛌 Sleep & Recovery")
-        s1, s2, s3 = st.columns(3)
-        s1.metric("Heart Rate Variability (HRV)", f"{current_hrv} ms", delta=f"{current_hrv - 50:+d} ms")
-        s2.metric("Skin Temp Deviation", current_temp_dev)
-        s3.metric("Sleep Quality Status", current_sleep)
+        with t_resp:
+            r1, r2 = st.columns(2)
+            r1.metric("Blood Oxygen (SpO2)", f"{current_spo2}%", delta=f"{current_spo2 - 95:+d}%")
+            r2.metric("Respiratory Rate", f"{current_resp_rate} breaths/min", delta=f"{current_resp_rate - 14:+d}")
 
-        st.markdown("#### ⚠️ Specialized Safety & Exertion")
-        d1, d2, d3 = st.columns(3)
-        d1.metric("Fall/Seizure Guard", current_fall)
-        d2.metric("Stress Level Score", f"{current_stress} / 100")
-        d3.metric("Active Calories", f"{current_calories} kcal")
+        with t_sleep:
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Heart Rate Variability (HRV)", f"{current_hrv} ms", delta=f"{current_hrv - 50:+d} ms")
+            s2.metric("Skin Temp Deviation", current_temp_dev)
+            s3.metric("Sleep Quality Status", current_sleep)
+
+        with t_safety:
+            d1, d2, d3 = st.columns(3)
+            d1.metric("Fall/Seizure Guard", current_fall)
+            d2.metric("Stress Level Score", f"{current_stress} / 100")
+            d3.metric("Active Calories", f"{current_calories} kcal")
 
         if current_spo2 < 92:
             delivered = fire_emergency_webhook({"alert": "low_spo2", "value": int(current_spo2), "patient": st.session_state.active_patient})
@@ -1287,14 +1343,17 @@ with tab3:
                 f"Simulated blood oxygen has fallen below 92%. {'Webhook notified.' if delivered else 'Webhook did not confirm delivery.'}"
             )
 
-        fig, ax = plt.subplots(figsize=(7, 3))
-        sns.lineplot(data=hist_df, x="Reading", y="Heart_Rate", label="Pulse (bpm)", ax=ax, color="#8884d8", marker="o", linewidth=2)
-        sns.lineplot(data=hist_df, x="Reading", y="SpO2", label="SpO2 (%)", ax=ax, color="#ef4444", marker="s", linewidth=2)
+        # Custom Cliniva palette chart formatting
+        fig, ax = plt.subplots(figsize=(7, 3.2), facecolor="#ffffff")
+        ax.set_facecolor("#ffffff")
+        sns.lineplot(data=hist_df, x="Reading", y="Heart_Rate", label="Pulse (bpm)", ax=ax, color="#7c4dff", marker="o", linewidth=2.5)
+        sns.lineplot(data=hist_df, x="Reading", y="SpO2", label="SpO2 (%)", ax=ax, color="#ff6b6b", marker="s", linewidth=2.5)
         ax2 = ax.twinx()
-        sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax=ax2, color="#3b82f6", marker="s")
-        ax.set_title("Simulated Live Pulse, SpO2, and HRV Telemetry (Demo Stream)", fontsize=11, fontweight="bold")
-        ax.set_ylabel("Pulse (bpm) / SpO2 (%)", fontsize=9)
-        ax2.set_ylabel("HRV (ms)", color="#3b82f6", fontsize=9)
+        sns.lineplot(data=hist_df, x="Reading", y="HRV", label="HRV (ms)", ax=ax2, color="#00d2d3", marker="^", linewidth=2.5)
+        ax.set_title("Simulated Live Pulse, SpO2, and HRV Telemetry (Demo Stream)", fontsize=11, fontweight="bold", color="#1e1b4b")
+        ax.set_ylabel("Pulse (bpm) / SpO2 (%)", fontsize=9, color="#1e1b4b")
+        ax2.set_ylabel("HRV (ms)", color="#00d2d3", fontsize=9, fontweight="bold")
+        ax.grid(True, linestyle="--", alpha=0.3, color="#c7c7f8")
         ax.legend(loc="upper left", fontsize=8)
         ax2.legend(loc="upper right", fontsize=8)
         fig.tight_layout()
@@ -1367,6 +1426,7 @@ with tab3:
     st.caption("Click below to pass your current biometric data to the AI for a personalised 3-point preventative wellness analysis.")
 
     # DESIGN NOTE: Health Coach button outside form — fires Gemini immediately on click.
+    # DESIGN NOTE: Located outside st.form to trigger one-shot Gemini preventative health analysis on demand.
     if st.button("✨ Generate AI Health Insight", key="generate_coach", type="primary",
                   use_container_width=True, disabled=not _api_ready):
         csv_string = df.to_csv(index=False)
@@ -1422,7 +1482,7 @@ with tab4:
     patient_reminders.sort(key=lambda r: r["date"])
 
     if not patient_reminders:
-        st.caption("No reminders yet for this patient.")
+        render_empty_state("📌", "No Reminders Set", "Add appointments, medication refills, or follow-up tests using the form above.")
     else:
         today_str = date.today().isoformat()
         for r in patient_reminders:
