@@ -41,131 +41,170 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Custom Modern UI CSS Styles ───────────────────────────────────────────────
+# ── Custom Cliniva Medical UI CSS Styles ───────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
     html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     }
 
-    /* Main App Background Gradient */
+    /* Main App Background — Cliniva Light Slate/Lavender Tint */
     .stApp {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-        color: #f8fafc;
+        background-color: #f4f6fb !important;
+        color: #1e293b !important;
     }
 
-    /* Sidebar Glassmorphism */
+    /* Sidebar Styling — Crisp White Cliniva Navigation */
     [data-testid="stSidebar"] {
-        background: rgba(15, 23, 42, 0.88) !important;
-        backdrop-filter: blur(12px);
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
+        background-color: #ffffff !important;
+        border-right: 1px solid #e2e8f0 !important;
+        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.03) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p, 
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] .stMarkdown {
+        color: #334155 !important;
+        font-weight: 500;
     }
 
-    /* Metric Cards Styling & Hover Micro-animations */
-    [data-testid="stMetricValue"] {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        font-weight: 700;
-        color: #38bdf8 !important;
+    /* Top Banner / Welcome Header Style */
+    div.stAlert {
+        background: linear-gradient(135deg, #e0e7ff 0%, #dbeafe 100%) !important;
+        border: 1px solid #c7d2fe !important;
+        border-radius: 16px !important;
+        color: #1e1b4b !important;
+        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.08) !important;
     }
-    
+
+    /* Cliniva Metric Cards (White Container with Vibrant Accents) */
     [data-testid="stMetric"] {
-        background: rgba(30, 41, 59, 0.75);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 14px;
-        padding: 14px 18px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-        backdrop-filter: blur(8px);
-        transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+        background-color: #ffffff !important;
+        border: 1px solid #f1f5f9 !important;
+        border-radius: 16px !important;
+        padding: 18px 22px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04) !important;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
     [data-testid="stMetric"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(56, 189, 248, 0.2);
-        border-color: rgba(56, 189, 248, 0.35);
+        transform: translateY(-3px) !important;
+        box-shadow: 0 8px 25px rgba(99, 102, 241, 0.12) !important;
+        border-color: #c7d2fe !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        font-weight: 800 !important;
+        font-size: 1.9rem !important;
+        color: #4f46e5 !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #64748b !important;
+        font-weight: 600 !important;
+        font-size: 0.88rem !important;
     }
 
-    /* Primary & Secondary Buttons */
-    .stButton button, div.stButton > button {
+    /* Buttons — Cliniva Primary Indigo & Secondary Light */
+    .stButton button, div.stButton > button, div.stLinkButton > a {
         border-radius: 10px !important;
         font-weight: 600 !important;
-        letter-spacing: 0.3px;
-        transition: all 0.25s ease-in-out !important;
+        font-size: 0.9rem !important;
+        padding: 0.5rem 1.25rem !important;
+        transition: all 0.2s ease-in-out !important;
     }
     .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
         border: none !important;
-        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4) !important;
         color: #ffffff !important;
+        box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35) !important;
     }
     .stButton button[kind="primary"]:hover {
-        transform: translateY(-2px) scale(1.01) !important;
-        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6) !important;
+        background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5) !important;
     }
-    .stButton button[kind="secondary"] {
-        background: rgba(51, 65, 85, 0.6) !important;
-        border: 1px solid rgba(255, 255, 255, 0.12) !important;
-        color: #e2e8f0 !important;
+    .stButton button[kind="secondary"], div.stLinkButton > a {
+        background-color: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #334155 !important;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03) !important;
     }
-    .stButton button[kind="secondary"]:hover {
-        background: rgba(71, 85, 105, 0.8) !important;
-        border-color: rgba(255, 255, 255, 0.25) !important;
+    .stButton button[kind="secondary"]:hover, div.stLinkButton > a:hover {
+        background-color: #f8fafc !important;
+        border-color: #6366f1 !important;
+        color: #4f46e5 !important;
         transform: translateY(-2px) !important;
     }
 
-    /* Tabs Styling */
+    /* Tabs Bar — Cliniva Pill Tabs Styling */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: rgba(15, 23, 42, 0.6);
-        padding: 6px 8px;
-        border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        gap: 6px !important;
+        background-color: #ffffff !important;
+        padding: 6px 8px !important;
+        border-radius: 14px !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03) !important;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 44px;
-        border-radius: 8px;
-        padding: 0px 20px;
-        color: #94a3b8 !important;
-        font-weight: 600;
+        height: 42px !important;
+        border-radius: 10px !important;
+        padding: 0px 22px !important;
+        color: #64748b !important;
+        font-weight: 600 !important;
         border: none !important;
     }
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%) !important;
         color: #ffffff !important;
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3) !important;
     }
 
-    /* Alert Banners & Containers */
-    div.stAlert {
-        border-radius: 12px !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        backdrop-filter: blur(10px);
+    /* Expanders & Cards */
+    div[data-testid="stExpander"] {
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 14px !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
     }
 
-    /* Chat Messages Glassmorphism */
+    /* Chat Messages Light Container */
     [data-testid="stChatMessage"] {
-        background: rgba(30, 41, 59, 0.65) !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        background-color: #ffffff !important;
+        border: 1px solid #e2e8f0 !important;
         border-radius: 14px !important;
         padding: 16px !important;
         margin-bottom: 12px !important;
-        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
+    }
+
+    /* Data Editor / Tables */
+    [data-testid="stTable"], [data-testid="stDataEditor"] {
+        background-color: #ffffff !important;
+        border-radius: 14px !important;
+        border: 1px solid #e2e8f0 !important;
+        overflow: hidden !important;
+    }
+
+    /* Headings */
+    h1, h2, h3, h4 {
+        color: #0f172a !important;
+        font-weight: 700 !important;
     }
 
     /* Smooth Custom Scrollbar */
     ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 7px;
+        height: 7px;
     }
     ::-webkit-scrollbar-track {
-        background: #0f172a;
+        background: #f1f5f9;
     }
     ::-webkit-scrollbar-thumb {
-        background: #334155;
+        background: #cbd5e1;
         border-radius: 4px;
     }
     ::-webkit-scrollbar-thumb:hover {
-        background: #475569;
+        background: #94a3b8;
     }
 </style>
 """, unsafe_allow_html=True)
