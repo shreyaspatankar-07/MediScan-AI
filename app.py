@@ -41,6 +41,135 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Custom Modern UI CSS Styles ───────────────────────────────────────────────
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    /* Main App Background Gradient */
+    .stApp {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+        color: #f8fafc;
+    }
+
+    /* Sidebar Glassmorphism */
+    [data-testid="stSidebar"] {
+        background: rgba(15, 23, 42, 0.88) !important;
+        backdrop-filter: blur(12px);
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Metric Cards Styling & Hover Micro-animations */
+    [data-testid="stMetricValue"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        font-weight: 700;
+        color: #38bdf8 !important;
+    }
+    
+    [data-testid="stMetric"] {
+        background: rgba(30, 41, 59, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 14px;
+        padding: 14px 18px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+        backdrop-filter: blur(8px);
+        transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    }
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(56, 189, 248, 0.2);
+        border-color: rgba(56, 189, 248, 0.35);
+    }
+
+    /* Primary & Secondary Buttons */
+    .stButton button, div.stButton > button {
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.3px;
+        transition: all 0.25s ease-in-out !important;
+    }
+    .stButton button[kind="primary"] {
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+        border: none !important;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4) !important;
+        color: #ffffff !important;
+    }
+    .stButton button[kind="primary"]:hover {
+        transform: translateY(-2px) scale(1.01) !important;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6) !important;
+    }
+    .stButton button[kind="secondary"] {
+        background: rgba(51, 65, 85, 0.6) !important;
+        border: 1px solid rgba(255, 255, 255, 0.12) !important;
+        color: #e2e8f0 !important;
+    }
+    .stButton button[kind="secondary"]:hover {
+        background: rgba(71, 85, 105, 0.8) !important;
+        border-color: rgba(255, 255, 255, 0.25) !important;
+        transform: translateY(-2px) !important;
+    }
+
+    /* Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: rgba(15, 23, 42, 0.6);
+        padding: 6px 8px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 44px;
+        border-radius: 8px;
+        padding: 0px 20px;
+        color: #94a3b8 !important;
+        font-weight: 600;
+        border: none !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%) !important;
+        color: #ffffff !important;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+    }
+
+    /* Alert Banners & Containers */
+    div.stAlert {
+        border-radius: 12px !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        backdrop-filter: blur(10px);
+    }
+
+    /* Chat Messages Glassmorphism */
+    [data-testid="stChatMessage"] {
+        background: rgba(30, 41, 59, 0.65) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 14px !important;
+        padding: 16px !important;
+        margin-bottom: 12px !important;
+        backdrop-filter: blur(8px);
+    }
+
+    /* Smooth Custom Scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ── Google Gemini Client (PRIMARY REASONING ENGINE) ─────────────────────────
 # Architecture: Gemini handles ALL text generation (triage, health coach) and
 # multimodal vision analysis. This is the core intelligence layer of MediScan AI.
