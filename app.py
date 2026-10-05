@@ -1,4 +1,8 @@
 import streamlit as st
+<<<<<<< HEAD
+=======
+import os
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 import pandas as pd
 from PIL import Image
 from google import genai
@@ -201,6 +205,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+<<<<<<< HEAD
 # ── Google Gemini Client (PRIMARY REASONING ENGINE) ─────────────────────────
 # Architecture: Gemini handles ALL text generation (triage, health coach) and
 # multimodal vision analysis. This is the core intelligence layer of MediScan AI.
@@ -224,6 +229,122 @@ except Exception as exc:
     logger.warning("Groq client init failed: %s", exc)
 
 EMERGENCY_WEBHOOK_URL = "https://hook.us1.make.com/mock-emergency"
+=======
+# ── API Key Resolution & Resilient Model Inference ────────────────────────────
+def get_api_key(name: str) -> str:
+    """Multi-tiered credential resolution: session_state -> st.secrets -> os.environ."""
+    # 1. Custom key entered in UI
+    custom_val = st.session_state.get(f"custom_{name}", "").strip()
+    if custom_val:
+        return custom_val
+    # 2. Streamlit secrets (safely handled if secrets.toml is missing)
+    try:
+        if name in st.secrets:
+            return str(st.secrets[name]).strip()
+    except Exception:
+        pass
+    # 3. Environment variables
+    return os.environ.get(name, "").strip()
+
+
+def init_gemini_client():
+    key = get_api_key("GEMINI_API_KEY")
+    if not key:
+        return None
+    try:
+        return genai.Client(api_key=key)
+    except Exception as exc:
+        logger.warning("Gemini client init failed: %s", exc)
+        return None
+
+
+def init_groq_client():
+    key = get_api_key("GROQ_API_KEY")
+    if not key:
+        return None
+    try:
+        return Groq(api_key=key)
+    except Exception as exc:
+        logger.warning("Groq client init failed: %s", exc)
+        return None
+
+
+# Primary candidate models with graceful degradation
+GEMINI_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+]
+
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "mixtral-8x7b-32768",
+]
+
+
+def call_gemini_with_fallback(client, contents, system_instruction: str = None) -> tuple[str, str]:
+    """Execute Gemini generation with automatic candidate model fallback on 404/NotFound."""
+    last_err = None
+    config = types.GenerateContentConfig(system_instruction=system_instruction) if system_instruction else None
+    for model_name in GEMINI_MODELS:
+        try:
+            resp = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+            return resp.text, model_name
+        except Exception as exc:
+            last_err = exc
+            err_str = str(exc).lower()
+            if "not found" in err_str or "404" in err_str:
+                logger.info("Gemini model %s not available, attempting fallback: %s", model_name, exc)
+                continue
+            logger.warning("Gemini generation failed on %s: %s", model_name, exc)
+            raise exc
+    raise last_err or RuntimeError("No candidate Gemini models were available.")
+
+
+def call_groq_second_opinion(groq_client, primary_analysis: str) -> str:
+    """Generate second opinion via Groq Llama 3 with fallback across supported models."""
+    last_err = None
+    for model_name in GROQ_MODELS:
+        try:
+            res = groq_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a Senior Medical Synthesizer reviewing a clinical AI triage / report OCR output. "
+                            "Provide a concise, objective second opinion, highlight any missed biomarkers or nuances, "
+                            "and deliver a unified consensus recommendation. Include standard disclaimers."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Primary Clinical Analysis to review:\n{primary_analysis}",
+                    },
+                ],
+            )
+            return res.choices[0].message.content
+        except Exception as exc:
+            last_err = exc
+            logger.info("Groq model %s failed, attempting fallback: %s", model_name, exc)
+            continue
+    raise last_err or RuntimeError("All candidate Groq models failed.")
+
+
+# Initialize clients
+client = init_gemini_client()
+_api_ready = client is not None
+groq_client = init_groq_client()
+
+EMERGENCY_WEBHOOK_URL = os.environ.get("EMERGENCY_WEBHOOK_URL", "https://hook.us1.make.com/mock-emergency")
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 LANG_MAP = {"English": "en", "Hindi (हिन्दी)": "hi", "Marathi (मराठी)": "mr", "Bengali (বাংলা)": "bn", "Spanish (Español)": "es"}
 
 # ── System Instructions ───────────────────────────────────────────────────────
@@ -303,6 +424,7 @@ def new_patient_record(age: int = 25, sex: str = "Male", weight: float = 70.0, c
 
 
 def fire_emergency_webhook(payload: dict) -> bool:
+<<<<<<< HEAD
     """POST an emergency alert payload to the configured webhook endpoint.
 
     Returns True on a successful (2xx) response, False otherwise. Failures are
@@ -314,6 +436,13 @@ def fire_emergency_webhook(payload: dict) -> bool:
     ok = False
     try:
         resp = requests.post(EMERGENCY_WEBHOOK_URL, json=payload, timeout=4)
+=======
+    """POST an emergency alert payload to the configured webhook endpoint."""
+    webhook_url = st.session_state.get("custom_webhook_url") or EMERGENCY_WEBHOOK_URL
+    ok = False
+    try:
+        resp = requests.post(webhook_url, json=payload, timeout=2.5)
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
         ok = resp.ok
         if not ok:
             logger.warning("Emergency webhook returned status %s: %s", resp.status_code, resp.text[:200])
@@ -404,11 +533,23 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
     h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=18, spaceAfter=4)
     h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=13, spaceBefore=14, spaceAfter=6, textColor=colors.HexColor("#1a4d7a"))
     small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8, textColor=colors.gray)
+<<<<<<< HEAD
     body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10, leading=14)
     tag = ParagraphStyle("tag", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#b02a2a"))
 
     def esc(text):
         return (str(text) or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+=======
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=9.5, leading=13.5)
+    tag = ParagraphStyle("tag", parent=styles["Normal"], fontSize=8.5, textColor=colors.HexColor("#b02a2a"))
+
+    def esc(text):
+        if not text:
+            return ""
+        s = str(text)
+        s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return s
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
     story = []
 
@@ -427,6 +568,7 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
 
     # ── Patient Profile ────────────────────────────────────────────────────
     story.append(Paragraph("Patient Profile", h2))
+<<<<<<< HEAD
     prof = record["profile"]
     profile_table_data = [
         ["Name", esc(patient_name)],
@@ -441,6 +583,24 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
     pt.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f8")),
         ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+=======
+    prof = record.get("profile", {})
+    profile_table_data = [
+        [Paragraph("<b>Name</b>", body), Paragraph(esc(patient_name), body)],
+        [Paragraph("<b>Age</b>", body), Paragraph(esc(prof.get("age", "—")), body)],
+        [Paragraph("<b>Sex</b>", body), Paragraph(esc(prof.get("sex", "—")), body)],
+        [Paragraph("<b>Weight</b>", body), Paragraph(f"{prof.get('weight_kg', 0):.1f} kg" if prof.get("weight_kg") else "—", body)],
+        [Paragraph("<b>Chronic Conditions</b>", body), Paragraph(esc(prof.get("chronic_conditions") or "None reported"), body)],
+    ]
+    if emergency_contact and emergency_contact.get("name"):
+        profile_table_data.append([
+            Paragraph("<b>Emergency Contact</b>", body),
+            Paragraph(f"{esc(emergency_contact['name'])} — {esc(emergency_contact.get('phone', ''))}", body)
+        ])
+    pt = Table(profile_table_data, colWidths=[1.8 * inch, 4.4 * inch])
+    pt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f8")),
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9d6e3")),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
@@ -450,6 +610,7 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
 
     # ── Structured Intake (most recent) ────────────────────────────────────
     intake = record.get("last_intake")
+<<<<<<< HEAD
     if intake:
         story.append(Paragraph("Most Recent Structured Intake", h2))
         intake_data = [
@@ -462,6 +623,20 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
         it.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f8")),
             ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+=======
+    if intake and intake.get("locked"):
+        story.append(Paragraph("Most Recent Structured Intake", h2))
+        intake_data = [
+            [Paragraph("<b>Severity</b>", body), Paragraph(f"{intake.get('severity', '—')}/10", body)],
+            [Paragraph("<b>Duration</b>", body), Paragraph(esc(intake.get("duration", "—")), body)],
+            [Paragraph("<b>Onset</b>", body), Paragraph(esc(intake.get("onset", "—")), body)],
+            [Paragraph("<b>Affected Area(s)</b>", body), Paragraph(esc(", ".join(intake.get("body_areas", [])) or "Not specified"), body)],
+        ]
+        it = Table(intake_data, colWidths=[1.8 * inch, 4.4 * inch])
+        it.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef3f8")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9d6e3")),
             ("TOPPADDING", (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -474,7 +649,11 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
         hm = record["health_metrics"]
         header = ["Month", "Resting HR", "Systolic BP", "Fasting Glucose", "Risk Score"]
         rows = [header] + hm[["Month", "Resting_HR", "Systolic_BP", "Fasting_Glucose", "Health_Risk_Score"]].astype(str).values.tolist()
+<<<<<<< HEAD
         bt = Table(rows, colWidths=[1.0 * inch] * 5)
+=======
+        bt = Table(rows, colWidths=[1.2 * inch] * 5)
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
         bt.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a4d7a")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -487,8 +666,13 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
         ]))
         story.append(bt)
         latest = hm.iloc[-1]
+<<<<<<< HEAD
         flag_label, _ = metric_flag("Health_Risk_Score", latest["Health_Risk_Score"])
         story.append(Paragraph(f"Latest Health Risk Score: <b>{int(latest['Health_Risk_Score'])}/100</b> ({esc(flag_label)})", body))
+=======
+        flag_label, _ = metric_flag("Health_Risk_Score", float(latest["Health_Risk_Score"]))
+        story.append(Paragraph(f"Latest Health Risk Score: <b>{int(float(latest['Health_Risk_Score']))}/100</b> ({esc(flag_label)})", body))
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
     # ── AI Triage Transcript ────────────────────────────────────────────────
     if include_chat and record["chat_history"]:
@@ -500,9 +684,17 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
         story.append(Spacer(1, 4))
         for m in record["chat_history"]:
             role_label = "Patient" if m["role"] == "user" else "MediScan AI"
+<<<<<<< HEAD
             style = body
             text = esc(m["content"]).replace("\n", "<br/>")
             story.append(Paragraph(f"<b>{role_label}:</b> {text}", style))
+=======
+            content = m["content"]
+            # Strip internal JSON block from PDF view
+            content = re.sub(r'```json\s*\{.*?\}\s*```', '', content, flags=re.DOTALL)
+            text = esc(content).replace("\n", "<br/>")
+            story.append(Paragraph(f"<b>{role_label}:</b> {text}", body))
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             story.append(Spacer(1, 6))
 
     # ── Report / Lab Analysis History ──────────────────────────────────────
@@ -513,6 +705,13 @@ def generate_doctor_pdf(patient_name, record, emergency_contact, language,
             story.append(Paragraph(f"<b>{esc(r['filename'])}</b> — {esc(r['timestamp'])}", body))
             text = esc(r["result"]).replace("\n", "<br/>")
             story.append(Paragraph(text, body))
+<<<<<<< HEAD
+=======
+            if r.get("second_opinion"):
+                story.append(Spacer(1, 4))
+                so_text = esc(r["second_opinion"]).replace("\n", "<br/>")
+                story.append(Paragraph(f"<b>⚖️ Senior Medical Synthesizer Consensus (Groq Llama 3):</b><br/>{so_text}", body))
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             story.append(Spacer(1, 10))
 
     # ── Doctor Notes Section ────────────────────────────────────────────────
@@ -593,6 +792,7 @@ with st.sidebar:
         index=list(LANG_MAP.keys()).index(st.session_state.app_language),
     )
 
+<<<<<<< HEAD
     if not _api_ready:
         st.warning(
             "⚠️ **Gemini API key not configured.**\n\nAdd `GEMINI_API_KEY` to `.streamlit/secrets.toml`. Report analysis will be unavailable until then.",
@@ -603,6 +803,39 @@ with st.sidebar:
             "⚠️ **Groq API key not configured.**\n\nAdd `GROQ_API_KEY` to `.streamlit/secrets.toml`. Voice input (Whisper STT) will be unavailable until then.",
             icon="🔑",
         )
+=======
+    with st.expander("🔑 API Keys & System Connectivity", expanded=not _api_ready):
+        st.caption("Provide credentials here or via `.streamlit/secrets.toml` or system environment variables.")
+        c_gem_status = "🟢 Connected" if _api_ready else "🔴 Missing Key"
+        c_groq_status = "🟢 Connected" if groq_client else "🔴 Missing Key"
+        st.markdown(f"- **Gemini AI:** `{c_gem_status}`\n- **Groq Whisper:** `{c_groq_status}`")
+        custom_gem = st.text_input(
+            "Gemini API Key",
+            type="password",
+            value=st.session_state.get("custom_GEMINI_API_KEY", ""),
+            placeholder="AIzaSy...",
+            key="input_gemini_key",
+        )
+        custom_groq = st.text_input(
+            "Groq API Key",
+            type="password",
+            value=st.session_state.get("custom_GROQ_API_KEY", ""),
+            placeholder="gsk_...",
+            key="input_groq_key",
+        )
+        custom_hook = st.text_input(
+            "Alert Webhook URL",
+            value=st.session_state.get("custom_webhook_url", EMERGENCY_WEBHOOK_URL),
+            placeholder="https://...",
+            key="input_webhook_url",
+        )
+        if st.button("💾 Apply API Settings", use_container_width=True, type="primary"):
+            st.session_state["custom_GEMINI_API_KEY"] = custom_gem.strip()
+            st.session_state["custom_GROQ_API_KEY"] = custom_groq.strip()
+            st.session_state["custom_webhook_url"] = custom_hook.strip()
+            st.success("API credentials saved!")
+            st.rerun()
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
     st.markdown("---")
     st.markdown("## 👤 Patient Profiles")
@@ -621,6 +854,10 @@ with st.sidebar:
             if new_name and new_name not in st.session_state.patients:
                 st.session_state.patients[new_name] = new_patient_record()
                 st.session_state.active_patient = new_name
+<<<<<<< HEAD
+=======
+                st.session_state["new_patient_name"] = ""
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                 st.rerun()
             elif new_name in st.session_state.patients:
                 st.warning("A patient with that name already exists.")
@@ -702,6 +939,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 📄 Export Dossier")
 
+<<<<<<< HEAD
     def generate_dossier(patient_name: str, record: dict) -> str:
         """Build a plain-text patient dossier string for download/export."""
         prof = record["profile"]
@@ -719,11 +957,35 @@ with st.sidebar:
         if record["coach_recommendation"]:
             content += f"\nLATEST WELLNESS COACH RECOMMENDATION:\n{record['coach_recommendation']}\n"
         if record["chat_history"]:
+=======
+    def generate_dossier(patient_name: str, record: dict, emergency_contact: dict = None) -> str:
+        """Build a plain-text patient dossier string for download/export."""
+        if emergency_contact is None:
+            emergency_contact = {}
+        prof = record.get("profile", {})
+        content = f"=== MEDISCAN AI PATIENT DOSSIER: {patient_name} ===\n"
+        content += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+        content += f"PROFILE:\nAge: {prof.get('age', '—')}\nSex: {prof.get('sex', '—')}\nWeight: {prof.get('weight_kg', '—')} kg\nConditions: {prof.get('chronic_conditions') or 'None'}\n\n"
+        if emergency_contact.get("name"):
+            content += f"EMERGENCY CONTACT:\n{emergency_contact['name']} — {emergency_contact.get('phone', '')}\n\n"
+        if not record["health_metrics"].empty:
+            content += f"BIOMETRIC TRAJECTORY (Last 6 Months):\n{record['health_metrics'].to_string(index=False)}\n\n"
+        if record.get("report_history"):
+            content += "LAB / VISUAL REPORT HISTORY:\n"
+            for r in record["report_history"]:
+                content += f"\n--- {r['timestamp']} ({r['filename']}) ---\n{r['result']}\n"
+                if r.get("second_opinion"):
+                    content += f"\n[SECOND OPINION CONSENSUS]\n{r['second_opinion']}\n"
+        if record.get("coach_recommendation"):
+            content += f"\nLATEST WELLNESS COACH RECOMMENDATION:\n{record['coach_recommendation']}\n"
+        if record.get("chat_history"):
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             content += "\nSYMPTOM TRIAGE CHAT LOG:\n"
             for m in record["chat_history"]:
                 content += f"[{m['role'].upper()}] {m['content']}\n\n"
         return content
 
+<<<<<<< HEAD
     # DESIGN NOTE: Lazy dossier generation capturing local variables outside the closure to ensure safe context handling without accessing st.session_state inside the deferred callable.
     _active_name = st.session_state.active_patient
     _active_record = st.session_state.patients[_active_name]
@@ -732,18 +994,89 @@ with st.sidebar:
     st.download_button(
         "📥 Download Active Patient Dossier",
         data=lambda name=_active_name, record=_active_record: generate_dossier(name, record),
+=======
+    _active_name = st.session_state.active_patient
+    _active_record = st.session_state.patients[_active_name]
+    _active_ec = dict(st.session_state.emergency_contact)
+    _all_patients_snapshot = {k: dict(v) for k, v in st.session_state.patients.items()}
+
+    st.download_button(
+        "📥 Download Active Patient Dossier",
+        data=lambda name=_active_name, record=_active_record, ec=_active_ec: generate_dossier(name, record, ec),
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
         file_name=f"mediscan_dossier_{_active_name.replace(' ', '_')}.txt",
         mime="text/plain", use_container_width=True, type="secondary",
     )
 
     st.download_button(
         "📥 Download All Patients Dossier",
+<<<<<<< HEAD
         data=lambda pts=_all_patients_snapshot: "\n\n".join(generate_dossier(n, r) for n, r in pts.items()),
+=======
+        data=lambda pts=_all_patients_snapshot, ec=_active_ec: "\n\n".join(generate_dossier(n, r, ec) for n, r in pts.items()),
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
         file_name="mediscan_dossier_all_patients.txt",
         mime="text/plain", use_container_width=True,
     )
 
     st.markdown("---")
+<<<<<<< HEAD
+=======
+    with st.expander("💾 Clinical Data Backup & Restore"):
+        st.caption("Export patient profiles, medical histories, and reminders to JSON or restore a prior backup.")
+        backup_dict = {
+            "patients": {
+                name: {
+                    "profile": p["profile"],
+                    "chat_history": p.get("chat_history", []),
+                    "archived_conversations": p.get("archived_conversations", []),
+                    "report_history": p.get("report_history", []),
+                    "health_metrics": p["health_metrics"].to_dict(orient="records"),
+                    "coach_recommendation": p.get("coach_recommendation"),
+                }
+                for name, p in st.session_state.patients.items()
+            },
+            "reminders": st.session_state.reminders,
+            "emergency_contact": st.session_state.emergency_contact,
+            "backup_date": datetime.now().isoformat(),
+        }
+        st.download_button(
+            "💾 Download All Records (JSON)",
+            data=json.dumps(backup_dict, indent=2),
+            file_name=f"mediscan_backup_{date.today().isoformat()}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+        restore_file = st.file_uploader("📂 Restore Records from Backup", type=["json"], key="restore_uploader")
+        if restore_file is not None:
+            if st.button("Apply Restored Records", use_container_width=True):
+                try:
+                    loaded = json.load(restore_file)
+                    if "patients" in loaded:
+                        restored_pts = {}
+                        for pname, pdata in loaded["patients"].items():
+                            rec = new_patient_record()
+                            rec["profile"] = pdata.get("profile", rec["profile"])
+                            rec["chat_history"] = pdata.get("chat_history", [])
+                            rec["archived_conversations"] = pdata.get("archived_conversations", [])
+                            rec["report_history"] = pdata.get("report_history", [])
+                            if "health_metrics" in pdata:
+                                rec["health_metrics"] = pd.DataFrame(pdata["health_metrics"])
+                            rec["coach_recommendation"] = pdata.get("coach_recommendation")
+                            restored_pts[pname] = rec
+                        st.session_state.patients = restored_pts
+                        st.session_state.active_patient = list(restored_pts.keys())[0]
+                    if "reminders" in loaded:
+                        st.session_state.reminders = loaded["reminders"]
+                    if "emergency_contact" in loaded:
+                        st.session_state.emergency_contact = loaded["emergency_contact"]
+                    st.success("✅ Clinical records restored successfully!")
+                    st.rerun()
+                except Exception as b_err:
+                    st.error(f"Restore failed: {b_err}")
+
+    st.markdown("---")
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
     with st.expander("⚙️ System Architecture"):
         st.markdown("""
 ```mermaid
@@ -789,6 +1122,7 @@ with tab1:
         icon="ℹ️",
     )
 
+<<<<<<< HEAD
     with st.expander("📋 Structured Intake (optional, improves accuracy)"):
         with st.form("structured_intake_form", clear_on_submit=False):
             ci1, ci2, ci3 = st.columns(3)
@@ -801,6 +1135,43 @@ with tab1:
                 key="intake_areas",
             )
             st.form_submit_button("✅ Lock Intake", use_container_width=True)
+=======
+    current_intake = active_record.get("last_intake") or {}
+    intake_locked = bool(current_intake.get("locked"))
+    with st.expander("📋 Structured Intake (optional, improves accuracy)", expanded=intake_locked):
+        if intake_locked:
+            st.success(
+                f"🔒 **Intake Active & Locked:** Severity: {current_intake.get('severity')}/10 | "
+                f"Duration: {current_intake.get('duration')} | Onset: {current_intake.get('onset')} | "
+                f"Areas: {', '.join(current_intake.get('body_areas', [])) or 'None'}"
+            )
+            if st.button("🔓 Unlock / Reset Intake", key="unlock_intake_btn", use_container_width=True):
+                active_record["last_intake"] = None
+                st.rerun()
+        else:
+            with st.form("structured_intake_form", clear_on_submit=False):
+                st.caption("Provide additional clinical context to assist triage ranking. If left unlocked, symptoms are evaluated naturally.")
+                ci1, ci2, ci3 = st.columns(3)
+                severity = ci1.slider("Severity (1 = mild, 10 = severe)", 1, 10, int(current_intake.get("severity") or 5), key="intake_severity")
+                duration = ci2.selectbox("Duration", ["< 1 day", "1-3 days", "4-7 days", "1-4 weeks", "> 1 month"],
+                                         index=["< 1 day", "1-3 days", "4-7 days", "1-4 weeks", "> 1 month"].index(current_intake.get("duration", "1-3 days")),
+                                         key="intake_duration")
+                onset = ci3.selectbox("Onset", ["Sudden", "Gradual", "Not sure"],
+                                      index=["Sudden", "Gradual", "Not sure"].index(current_intake.get("onset", "Gradual")),
+                                      key="intake_onset")
+                body_areas = st.multiselect(
+                    "Affected Body Area(s)",
+                    ["Head", "Chest", "Abdomen", "Back", "Arms", "Legs", "Skin", "Throat", "Eyes", "Whole body", "Other"],
+                    default=current_intake.get("body_areas", []),
+                    key="intake_areas",
+                )
+                if st.form_submit_button("✅ Lock Intake for Current Session", use_container_width=True, type="primary"):
+                    active_record["last_intake"] = {
+                        "severity": severity, "duration": duration, "onset": onset, "body_areas": body_areas, "locked": True
+                    }
+                    st.success("✅ Structured intake locked! It will be factored into your next triage inquiry.")
+                    st.rerun()
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
     top_c1, top_c2 = st.columns([3, 1])
     with top_c2:
@@ -821,11 +1192,16 @@ with tab1:
                     st.caption(f"{m['role']}: {m['content'][:120]}")
                 st.markdown("---")
 
+<<<<<<< HEAD
     # ── Render Chat History with feedback controls ────────────────────────────
+=======
+    # ── Render Chat History with feedback & voice controls ───────────────────
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
     for idx, message in enumerate(active_record["chat_history"]):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
             if message["role"] == "assistant":
+<<<<<<< HEAD
                 fb_col1, fb_col2, _ = st.columns([1, 1, 8])
                 current_fb = active_record["feedback"].get(idx)
                 if fb_col1.button("👍", key=f"fb_up_{idx}", type="primary" if current_fb == "up" else "secondary"):
@@ -834,6 +1210,31 @@ with tab1:
                 if fb_col2.button("👎", key=f"fb_down_{idx}", type="primary" if current_fb == "down" else "secondary"):
                     active_record["feedback"][idx] = "down"
                     st.rerun()
+=======
+                fb_c1, fb_c2, fb_c3, _ = st.columns([1, 1, 4, 4])
+                current_fb = active_record["feedback"].get(idx)
+                if fb_c1.button("👍", key=f"fb_up_{idx}", type="primary" if current_fb == "up" else "secondary"):
+                    active_record["feedback"][idx] = None if current_fb == "up" else "up"
+                    st.rerun()
+                if fb_c2.button("👎", key=f"fb_down_{idx}", type="primary" if current_fb == "down" else "secondary"):
+                    active_record["feedback"][idx] = None if current_fb == "down" else "down"
+                    st.rerun()
+                if message.get("audio"):
+                    fb_c3.audio(message["audio"], format="audio/mp3")
+                else:
+                    if fb_c3.button("🔊 Read Aloud", key=f"tts_btn_{idx}"):
+                        try:
+                            c_txt = re.sub(r'```.*?```', '', message["content"], flags=re.DOTALL)
+                            c_txt = c_txt.replace("*", "").replace("#", "").strip()
+                            t_lang = LANG_MAP.get(st.session_state.app_language, "en")
+                            tts = gTTS(text=c_txt[:600], lang=t_lang, slow=False)
+                            a_buf = io.BytesIO()
+                            tts.write_to_fp(a_buf)
+                            message["audio"] = a_buf.getvalue()
+                            st.rerun()
+                        except Exception as tts_err:
+                            fb_c3.caption(f"Audio error: {tts_err}")
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
     # ── Audio Input ───────────────────────────────────────────────────────────
     st.markdown("#### 🎙️ Voice Input *(optional)*")
@@ -867,6 +1268,7 @@ with tab1:
     if user_text or is_new_audio:
         profile = active_record["profile"]
 
+<<<<<<< HEAD
         active_record["last_intake"] = {
             "severity": severity, "duration": duration, "onset": onset, "body_areas": body_areas,
         }
@@ -875,6 +1277,17 @@ with tab1:
             f"\nSTRUCTURED INTAKE:\n- Severity: {severity}/10\n- Duration: {duration}\n"
             f"- Onset: {onset}\n- Affected area(s): {', '.join(body_areas) if body_areas else 'Not specified'}\n"
         )
+=======
+        # Only inject structured intake if the user explicitly submitted / locked it
+        cur_intake = active_record.get("last_intake")
+        if cur_intake and cur_intake.get("locked"):
+            intake_summary = (
+                f"\nSTRUCTURED INTAKE:\n- Severity: {cur_intake.get('severity')}/10\n- Duration: {cur_intake.get('duration')}\n"
+                f"- Onset: {cur_intake.get('onset')}\n- Affected area(s): {', '.join(cur_intake.get('body_areas', [])) or 'Not specified'}\n"
+            )
+        else:
+            intake_summary = ""
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
         dynamic_system_instruction = f"""{TRIAGE_SYSTEM_INSTRUCTION}
 
@@ -894,7 +1307,12 @@ You must translate your entire response, including the differential diagnosis an
             with st.spinner("🎙️ Transcribing audio with Groq Whisper..."):
                 try:
                     transcription = groq_client.audio.transcriptions.create(
+<<<<<<< HEAD
                         file=("audio.wav", audio_value.read()), model="whisper-large-v3-turbo"
+=======
+                        file=("audio.wav", io.BytesIO(audio_bytes)),
+                        model="whisper-large-v3-turbo",
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                     )
                     final_symptom_text = f"{final_symptom_text}\nVoice note: {transcription.text}".strip()
                 except Exception as exc:
@@ -912,35 +1330,58 @@ You must translate your entire response, including the differential diagnosis an
                 role_label = "Patient" if msg["role"] == "user" else "MediScan AI"
                 conversation_context += f"{role_label}: {msg['content']}\n\n"
 
+<<<<<<< HEAD
             # Programmatic prompt deduplication / cache lookup to prevent redundant Gemini API calls on duplicate submissions
+=======
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             prompt_cache_key = hashlib.md5(
                 f"{st.session_state.active_patient}_{final_symptom_text}_{st.session_state.app_language}_{intake_summary}".encode()
             ).hexdigest()
 
             assistant_reply = None
+<<<<<<< HEAD
             if prompt_cache_key in st.session_state.triage_prompt_cache:
                 logger.info("Serving cached triage response for prompt key %s", prompt_cache_key)
                 assistant_reply = st.session_state.triage_prompt_cache[prompt_cache_key]
                 with st.chat_message("assistant"):
                     st.caption("⚡ *Loaded from session cache*")
                     st.markdown(assistant_reply)
+=======
+            audio_bytes_generated = None
+            if prompt_cache_key in st.session_state.triage_prompt_cache:
+                logger.info("Serving cached triage response for prompt key %s", prompt_cache_key)
+                assistant_reply = st.session_state.triage_prompt_cache[prompt_cache_key]
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             else:
                 with st.chat_message("assistant"):
                     with st.spinner(f"🧠 Analysing symptoms in {st.session_state.app_language}..."):
                         try:
+<<<<<<< HEAD
                             response = client.models.generate_content(
                                 model="gemini-3.6-flash",
                                 contents=conversation_context,
                                 config=types.GenerateContentConfig(system_instruction=dynamic_system_instruction),
                             )
                             assistant_reply = response.text
+=======
+                            assistant_reply, used_model = call_gemini_with_fallback(
+                                client=client,
+                                contents=conversation_context,
+                                system_instruction=dynamic_system_instruction,
+                            )
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                             st.session_state.triage_prompt_cache[prompt_cache_key] = assistant_reply
                         except Exception as exc:
                             logger.error("Gemini triage call failed: %s", exc)
                             assistant_reply = f"⚠️ **Error communicating with Gemini:** `{exc}`"
+<<<<<<< HEAD
                     st.markdown(assistant_reply)
 
                 # ── Programmatic urgency detection via structured JSON output ──
+=======
+
+                # Programmatic urgency detection
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                 is_critical = False
                 try:
                     json_match = re.search(r'\{[^{}]*"urgency_level"[^{}]*\}', assistant_reply)
@@ -951,7 +1392,10 @@ You must translate your entire response, including the differential diagnosis an
                 except (json.JSONDecodeError, AttributeError) as exc:
                     logger.info("Urgency JSON parse fell back to keyword scan: %s", exc)
                 if not is_critical:
+<<<<<<< HEAD
                     # Fallback: keyword-based detection if JSON parsing failed
+=======
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                     critical_keywords = ["urgent care", "emergency", "immediate", "hospital", "chest pain", "stroke"]
                     is_critical = any(kw in assistant_reply.lower() for kw in critical_keywords)
                 if is_critical:
@@ -970,6 +1414,7 @@ You must translate your entire response, including the differential diagnosis an
                     else:
                         st.error(
                             "🚨 **CRITICAL TRIAGE ESCALATION** 🚨\n\nHigh-risk symptoms detected, but the "
+<<<<<<< HEAD
                             "alert endpoint did not confirm delivery (this is a mock webhook in the prototype). "
                             "Please seek in-person or emergency care directly."
                         )
@@ -987,6 +1432,29 @@ You must translate your entire response, including the differential diagnosis an
                     st.caption("🔇 Audio synthesis is temporarily unavailable.")
 
             active_record["chat_history"].append({"role": "assistant", "content": assistant_reply})
+=======
+                            "alert endpoint did not confirm delivery. Please seek in-person emergency care directly."
+                        )
+
+                # Synthesize TTS audio to store permanently in message
+                tts_lang = LANG_MAP.get(st.session_state.app_language, "en")
+                try:
+                    clean_text = re.sub(r'```.*?```', '', assistant_reply, flags=re.DOTALL)
+                    clean_text = clean_text.replace("*", "").replace("#", "").strip()
+                    if clean_text:
+                        tts = gTTS(text=clean_text[:600], lang=tts_lang, slow=False)
+                        audio_fp = io.BytesIO()
+                        tts.write_to_fp(audio_fp)
+                        audio_bytes_generated = audio_fp.getvalue()
+                except Exception as exc:
+                    logger.warning("gTTS synthesis failed: %s", exc)
+
+            active_record["chat_history"].append({
+                "role": "assistant",
+                "content": assistant_reply,
+                "audio": audio_bytes_generated,
+            })
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
         if audio_hash:
             active_record["last_processed_audio_hash"] = audio_hash
@@ -1166,12 +1634,20 @@ with tab2:
                 with st.spinner(f"Analyzing {fname} in {st.session_state.app_language}..."):
                     try:
                         pil_image = Image.open(fobj)
+<<<<<<< HEAD
                         response = client.models.generate_content(
                             model="gemini-3.6-flash",
                             contents=[context_text, "Please analyze this medical image.", pil_image],
                             config=types.GenerateContentConfig(system_instruction=lang_vision_instruction),
                         )
                         result_text = response.text
+=======
+                        result_text, used_model = call_gemini_with_fallback(
+                            client=client,
+                            contents=[context_text, "Please analyze this medical image.", pil_image],
+                            system_instruction=lang_vision_instruction,
+                        )
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                     except Exception as exc:
                         logger.error("Gemini vision analysis failed for %s: %s", fname, exc)
                         result_text = f"⚠️ **Gemini API error:** `{exc}`"
@@ -1180,6 +1656,10 @@ with tab2:
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
                         "filename": fname,
                         "result": result_text,
+<<<<<<< HEAD
+=======
+                        "second_opinion": None,
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                     })
             st.rerun()
 
@@ -1187,6 +1667,7 @@ with tab2:
         st.markdown("---")
         st.markdown(f"### 🗂️ Report History ({len(active_record['report_history'])})")
         for i, r in enumerate(reversed(active_record["report_history"])):
+<<<<<<< HEAD
             # Deletion/second-opinion actions reference the report by its stable
             # uuid (assigned at creation) rather than by list position, so a
             # click can never land on the wrong entry even if the underlying
@@ -1194,11 +1675,22 @@ with tab2:
             report_id = r.get("id") or uuid.uuid4().hex
             with st.expander(f"👁️ {r['filename']} — {r['timestamp']}", expanded=(i == 0)):
                 st.markdown(r["result"])
+=======
+            report_id = r.get("id") or uuid.uuid4().hex
+            with st.expander(f"👁️ {r['filename']} — {r['timestamp']}", expanded=(i == 0)):
+                st.markdown(r["result"])
+                if r.get("second_opinion"):
+                    st.markdown("---")
+                    st.markdown(f"**⚖️ Senior Medical Synthesizer Consensus (Groq Llama 3 — {r.get('second_opinion_ts', '')})**")
+                    st.info(r["second_opinion"], icon="🤖")
+
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                 bc1, bc2 = st.columns(2)
                 if bc1.button("⚖️ Second Opinion (Groq Llama 3)", key=f"second_opinion_{report_id}",
                               use_container_width=True, disabled=groq_client is None):
                     with st.spinner("Consulting Groq Llama 3 Synthesizer..."):
                         try:
+<<<<<<< HEAD
                             second_opinion = groq_client.chat.completions.create(
                                 model="openai/gpt-oss-20b",
                                 messages=[
@@ -1207,6 +1699,13 @@ with tab2:
                                 ],
                             )
                             st.info(second_opinion.choices[0].message.content, icon="🤖")
+=======
+                            so_text = call_groq_second_opinion(groq_client, r["result"])
+                            r["second_opinion"] = so_text
+                            r["second_opinion_ts"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                            st.success("✅ Senior second opinion consensus saved!")
+                            st.rerun()
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
                         except Exception as exc:
                             logger.error("Groq second-opinion call failed: %s", exc)
                             st.error(f"Error generating second opinion: {exc}")
@@ -1230,10 +1729,24 @@ with tab3:
 
     # ── KPI Summary Row ──────────────────────────────────────────────────────────
     kpi1, kpi2, kpi3 = st.columns(3)
+<<<<<<< HEAD
     _latest_risk = active_record["health_metrics"].iloc[-1]["Health_Risk_Score"]
     _prev_risk = active_record["health_metrics"].iloc[-2]["Health_Risk_Score"]
     kpi1.metric("📊 Overall Risk Trend", f"{int(_latest_risk)} / 100",
                 delta=int(_latest_risk - _prev_risk), delta_color="inverse")
+=======
+    hm_kpi = active_record["health_metrics"]
+    if len(hm_kpi) >= 2:
+        _latest_risk = float(hm_kpi.iloc[-1].get("Health_Risk_Score", 0) or 0)
+        _prev_risk = float(hm_kpi.iloc[-2].get("Health_Risk_Score", 0) or 0)
+        kpi1.metric("📊 Overall Risk Trend", f"{int(_latest_risk)} / 100",
+                    delta=int(_latest_risk - _prev_risk), delta_color="inverse")
+    elif len(hm_kpi) == 1:
+        _latest_risk = float(hm_kpi.iloc[-1].get("Health_Risk_Score", 0) or 0)
+        kpi1.metric("📊 Overall Risk Trend", f"{int(_latest_risk)} / 100")
+    else:
+        kpi1.metric("📊 Overall Risk Trend", "No records")
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
     if active_record["archived_conversations"]:
         _last_ts = active_record["archived_conversations"][-1]["timestamp"]
         _days = (date.today() - datetime.strptime(_last_ts, "%Y-%m-%d %H:%M").date()).days
@@ -1362,11 +1875,23 @@ with tab3:
             d3.metric("Active Calories", f"{current_calories} kcal")
 
         if current_spo2 < 92:
+<<<<<<< HEAD
             delivered = fire_emergency_webhook({"alert": "low_spo2", "value": int(current_spo2), "patient": st.session_state.active_patient})
             st.error(
                 "🚨 **CRITICAL: SpO2 DROP DETECTED (simulated demo data)** 🚨\n\n"
                 f"Simulated blood oxygen has fallen below 92%. {'Webhook notified.' if delivered else 'Webhook did not confirm delivery.'}"
             )
+=======
+            last_alert_ts = st.session_state.get("_last_spo2_alert_ts", 0)
+            now_ts = time.time()
+            if now_ts - last_alert_ts > 60:
+                st.session_state._last_spo2_alert_ts = now_ts
+                delivered = fire_emergency_webhook({"alert": "low_spo2", "value": int(current_spo2), "patient": st.session_state.active_patient})
+                st.error(
+                    "🚨 **CRITICAL: SpO2 DROP DETECTED (simulated demo data)** 🚨\n\n"
+                    f"Simulated blood oxygen has fallen below 92%. {'Webhook notified.' if delivered else 'Webhook did not confirm delivery.'}"
+                )
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
         # Custom Cliniva palette chart formatting
         fig, ax = plt.subplots(figsize=(7, 3.2), facecolor="#ffffff")
@@ -1407,6 +1932,7 @@ with tab3:
 
     st.divider()
     st.markdown("### 📍 Latest Readings")
+<<<<<<< HEAD
     latest = df.iloc[-1]
     prev = df.iloc[-2]
 
@@ -1429,6 +1955,47 @@ with tab3:
             "🚨 **CRITICAL RISK THRESHOLD EXCEEDED** 🚨\n\nScore is >= 85. "
             f"{'Preventative webhook notified.' if delivered else 'Webhook did not confirm delivery.'}"
         )
+=======
+    if not df.empty:
+        latest = df.iloc[-1]
+        prev = df.iloc[-2] if len(df) >= 2 else latest
+
+        col1, col2, col3 = st.columns(3)
+        for col, field, label, icon in [
+            (col1, "Health_Risk_Score", "Health Risk Score", "⚠️"),
+            (col2, "Resting_HR", "Resting HR", "💓"),
+            (col3, "Fasting_Glucose", "Fasting Glucose", "🩸"),
+        ]:
+            val_raw = latest.get(field, 0)
+            try:
+                val_f = float(val_raw) if pd.notnull(val_raw) else 0.0
+            except (ValueError, TypeError):
+                val_f = 0.0
+            prev_raw = prev.get(field, val_f)
+            try:
+                prev_f = float(prev_raw) if pd.notnull(prev_raw) else val_f
+            except (ValueError, TypeError):
+                prev_f = val_f
+            flag_label, flag_color = metric_flag(field, val_f)
+            col.metric(
+                label=f"{icon} {label}", value=f"{int(val_f)}",
+                delta=int(val_f - prev_f) if len(df) >= 2 else None,
+                delta_color="inverse",
+            )
+            col.markdown(f":{flag_color}[{flag_label}]")
+
+        latest_risk_val = float(latest.get("Health_Risk_Score", 0) or 0)
+        if latest_risk_val >= 85:
+            last_risk_alert = st.session_state.get("_last_risk_alert_ts", 0)
+            now_ts = time.time()
+            if now_ts - last_risk_alert > 60:
+                st.session_state._last_risk_alert_ts = now_ts
+                delivered = fire_emergency_webhook({"alert": "high_risk_score", "score": int(latest_risk_val), "patient": st.session_state.active_patient})
+                st.error(
+                    "🚨 **CRITICAL RISK THRESHOLD EXCEEDED** 🚨\n\nScore is >= 85. "
+                    f"{'Preventative webhook notified.' if delivered else 'Webhook did not confirm delivery.'}"
+                )
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
 
     st.divider()
     st.markdown("### 📈 Health Risk Score — 6-Month Trajectory")
@@ -1462,12 +2029,21 @@ with tab3:
         with st.spinner(f"🧠 Health Coach is analysing your biometric trends in {st.session_state.app_language}..."):
             try:
                 lang_coach_instruction = HEALTH_COACH_SYSTEM_INSTRUCTION + f"\n\nCRITICAL: You must provide your 3-bullet-point wellness recommendation and the CDSCO disclaimer entirely in {st.session_state.app_language}."
+<<<<<<< HEAD
                 response = client.models.generate_content(
                     model="gemini-3.6-flash",
                     contents=coach_prompt,
                     config=types.GenerateContentConfig(system_instruction=lang_coach_instruction),
                 )
                 active_record["coach_recommendation"] = response.text
+=======
+                response_text, used_model = call_gemini_with_fallback(
+                    client=client,
+                    contents=coach_prompt,
+                    system_instruction=lang_coach_instruction,
+                )
+                active_record["coach_recommendation"] = response_text
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             except Exception as exc:
                 logger.error("Gemini health coach call failed: %s", exc)
                 active_record["coach_recommendation"] = f"⚠️ **Gemini API error:** `{exc}`"
@@ -1572,8 +2148,15 @@ with tab4:
             # filtered, or mutated by another action between reruns.
             rid = r["id"]
             overdue = (not r["done"]) and r["date"] < today_str
+<<<<<<< HEAD
             row = st.columns([1, 4, 1, 1])
             row[0].markdown(f"{'🔴' if overdue else '🟢' if r['done'] else '🟡'} **{r['date']}**")
+=======
+            is_today = (not r["done"]) and r["date"] == today_str
+            row = st.columns([1.5, 4, 1, 1])
+            status_badge = "🟢 Completed" if r["done"] else ("🔴 Overdue" if overdue else ("🟠 Due Today" if is_today else "🟡 Upcoming"))
+            row[0].markdown(f"**{r['date']}**<br/>`{status_badge}`", unsafe_allow_html=True)
+>>>>>>> f912cba (Upgrade codebase: update modified files and add new features)
             row[1].markdown(f"~~{r['note']}~~" if r["done"] else r["note"])
             if row[2].button("✔️" if not r["done"] else "↩️", key=f"toggle_reminder_{rid}"):
                 for item in st.session_state.reminders:
